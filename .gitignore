@@ -1,0 +1,39 @@
+data/cardio_train.csv
+data/*.csv
+
+# ── 공통 ──────────────────────────────
+.DS_Store
+.env
+.env.*
+*.log
+
+# ── 프론트엔드 ──────────────────────────
+frontend/node_modules/
+frontend/.next/
+frontend/dist/
+frontend/build/
+
+# ── 백엔드 ──────────────────────────────
+backend/__pycache__/
+backend/*.pyc
+backend/.venv/
+backend/venv/
+
+# ── AI / 데이터 ──────────────────────────
+ai/data/*.csv
+ai/data/*.xlsx
+data/*.csv
+data/*.xlsx
+ai/models/*.pkl
+ai/models/*.joblib
+ai/__pycache__/
+
+# ── Jupyter ──────────────────────────────
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# ── 모델 학습 결과 ──────────────────────
+*.pkl
+*.joblib
+*.h5
+mlruns/
