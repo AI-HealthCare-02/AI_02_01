@@ -1,0 +1,150 @@
+// ==========================================
+// 1. 회원 및 인증 (User Domain)
+// ==========================================
+Table users {
+  id int [pk, increment]
+  provider varchar [note: '소셜 로그인 종류 (kakao, google, naver)']
+  provider_id varchar [note: '소셜 로그인 고유 ID']
+  nickname varchar [note: '서비스 전역에서 사용될 닉네임']
+  role varchar [default: 'USER', note: '권한 (USER, ADMIN)']
+  character_stage int [default: 0, note: '캐릭터 진화 단계 (0~3)']
+  current_point int [default: 0, note: '현재 보유 포인트']
+  created_at timestamp
+  
+  Note: '회원 정보 테이블. 비로그인 사용자의 데이터는 DB에 저장하지 않고 프론트 단에서 처리하므로, 이곳에는 실제 가입된 유저만 존재합니다.'
+}
+
+// ==========================================
+// 2. 건강검진 및 예측 (Health & Prediction Domain)
+// ==========================================
+Table health_records {
+  id int [pk, increment]
+  user_id int [ref: > users.id]
+  age int
+  gender varchar [note: 'M / F']
+  systolic_bp int [note: '수축기 혈압']
+  diastolic_bp int [note: '이완기 혈압']
+  total_cholesterol int [note: '총 콜레스테롤']
+  fasting_blood_sugar int [note: '공복혈당']
+  height decimal [note: '키 (cm)']
+  weight decimal [note: '몸무게 (kg)']
+  bmi decimal [note: '자동 계산된 BMI']
+  smoke_yn boolean [note: '현재 흡연 여부']
+  alcohol_yn boolean [note: '음주 여부']
+  exercise_yn boolean [note: '규칙적 운동 여부']
+  created_at timestamp
+  
+  Note: '정기 건강검진 수치를 저장하는 테이블 (3~6개월 단위 갱신). ML 예측의 기준 데이터가 됩니다.'
+}
+
+Table prediction_results {
+  id int [pk, increment]
+  record_id int [ref: > health_records.id] // [수정] 1:N 관계로 변경 (재예측 반영)
+  trigger_type varchar [note: '예측 발생 원인 (예: INITIAL, 7_DAY_STREAK, MANUAL)'] // [추가] 재예측 구분용
+  cvd_risk_percent decimal [note: '10년 내 심혈관 질환 발생 확률 (%)']
+  cvd_age int [note: '심혈관 나이']
+  risk_level varchar [note: '위험 등급 (LOW, NORMAL, MODERATE, HIGH, VERY_HIGH)']
+  top_risk_factors json [note: '상위 위험 요인 3개 (예: ["고혈압", "흡연", "비만"])']
+  ai_evaluation text [note: 'Claude API: 수치 평가 코멘트']
+  ai_alert text [note: 'Claude API: 위험 경고 (없으면 null)']
+  ai_missions json [note: 'Claude API: 추천 챌린지 3개']
+  ai_encouragement text [note: 'Claude API: 동기부여 문구']
+  created_at timestamp
+  
+  Note: '건강검진 수치(health_records)를 바탕으로 ML1(XGBoost)과 ML2(Claude)가 분석한 결과값. 데일리 체크로 인한 재예측이 발생하므로 하나의 검진 기록에 여러 예측 결과가 쌓입니다.'
+}
+
+// ==========================================
+// 3. 챌린지 및 일일 기록 (Challenge & Daily Log Domain)
+// ==========================================
+Table challenges {
+  id int [pk, increment]
+  category varchar [note: '분류 (BP, SUGAR, SMOKE, ALCOHOL, EXERCISE)']
+  title varchar [note: '챌린지 명 (예: 저염식사 하기, 하루 7천보 걷기)']
+  description text [note: '챌린지 상세 설명']
+  
+  Note: '서비스에서 제공하는 전체 챌린지 마스터(목록) 테이블.'
+}
+
+Table user_challenges {
+  id int [pk, increment]
+  user_id int [ref: > users.id]
+  challenge_id int [ref: > challenges.id]
+  status varchar [default: 'IN_PROGRESS', note: '진행상태 (IN_PROGRESS, COMPLETED)']
+  current_streak int [default: 0, note: '현재 연속 달성 일수']
+  start_date date
+  completed_at timestamp // [추가] 챌린지 완료 시점
+  
+  Note: '한 유저가 동시에 여러 챌린지를 진행할 수 있도록 연결해주는 매핑 테이블.'
+}
+
+// [추가] 챌린지 달성 로그 테이블
+Table challenge_logs {
+  id int [pk, increment]
+  user_challenge_id int [ref: > user_challenges.id]
+  log_date date [note: '달성 날짜']
+  created_at timestamp
+  
+  Note: '어떤 유저가 특정 챌린지를 "며칠 날" 성공했는지 하루하루의 도장을 찍어주는 테이블. 달력 뷰(REQ-CHAR-002) 구현 시 필수입니다.'
+} 
+
+Table daily_logs {
+  id int [pk, increment]
+  user_id int [ref: > users.id]
+  log_date date [note: '기록 날짜']
+  daily_systolic_bp int [note: '오늘 측정한 수축기 혈압 (선택)']
+  daily_diastolic_bp int [note: '오늘 측정한 이완기 혈압 (선택)']
+  daily_blood_sugar int [note: '오늘 측정한 공복혈당 (선택)']
+  smoke_yn boolean [note: '오늘 금연 성공 여부 ✅']
+  alcohol_yn boolean [note: '오늘 금주 성공 여부 ✅']
+  exercise_yn boolean [note: '오늘 운동 완료 여부']
+  steps int [note: '오늘 걸음 수 (선택)']
+  created_at timestamp
+  
+  Note: '당일 데일리 체크리스트 통합 데이터. 백엔드는 이 데이터를 인서트할 때 조건에 맞는 challenge_logs도 함께 생성해야 합니다.'
+}
+
+// ==========================================
+// 4. 게이미피케이션 (Gamification: Point & Badge)
+// ==========================================
+Table badges {
+  id int [pk, increment]
+  category varchar [note: '뱃지 분류 (출석, 챌린지 완주, 건강 개선 등)']
+  name varchar [note: '뱃지 이름 (예: 금연 챔피언)']
+  description text [note: '획득 조건']
+  reward_point int [note: '획득 시 지급되는 포인트']
+  
+  Note: '총 25종의 뱃지 정보를 담고 있는 마스터 테이블.'
+}
+
+Table user_badges {
+  id int [pk, increment]
+  user_id int [ref: > users.id]
+  badge_id int [ref: > badges.id]
+  acquired_at timestamp
+  
+  Note: '유저가 획득한 뱃지 이력을 관리하는 테이블.'
+}
+
+Table point_logs {
+  id int [pk, increment]
+  user_id int [ref: > users.id]
+  amount int [note: '지급(+) 또는 차감(-) 포인트 양']
+  reason varchar [note: '사유 (예: 7일 연속 달성 보너스, 캐릭터 아이템 구매)']
+  created_at timestamp
+  
+  Note: '포인트의 증감 내역(Log)을 모두 기록하여 포인트 추적 및 복구가 가능하게 하는 테이블.'
+}
+
+// ==========================================
+// 5. 친구 (Friend Domain)
+// ==========================================
+Table friendships {
+  id int [pk, increment]
+  user_id int [ref: > users.id]
+  friend_id int [ref: > users.id]
+  status varchar [default: 'PENDING', note: '상태 (PENDING:대기, ACCEPTED:수락, BLOCKED:차단)']
+  created_at timestamp
+  
+  Note: '유저 간의 친구 관계를 관리하는 테이블. 친구의 건강 수치는 백엔드 API 단에서 철저히 마스킹(비노출) 처리해야 합니다.'
+}
