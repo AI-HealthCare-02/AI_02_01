@@ -1,7 +1,7 @@
 [project]
-name = "ai-health-example"
+name = "my-health-buddy"
 version = "0.1.0"
-description = "AI 헬스케어 파이널 프로젝트 예시용"
+description = "AI 헬스케어 파이널 프로젝트 1조 - 마이헬스버디"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
@@ -10,6 +10,7 @@ dependencies = [
     "pydantic-settings>=2.12.0",
     "python-dateutil>=2.9.0.post0",
     "redis>=7.1.0",
+    "sqlalchemy>=2.0.48",
     "tomlkit>=0.14.0",
 ]
 

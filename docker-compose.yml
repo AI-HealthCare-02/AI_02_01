@@ -48,7 +48,7 @@ services:
     container_name: fastapi
     build:
       context: .  # 프로젝트 루트를 빌드 컨텍스트로 지정
-      dockerfile: app/Dockerfile  # Dockerfile 위치 지정
+      dockerfile: backend/app/Dockerfile  # Dockerfile 위치 지정
       platforms:
         - linux/amd64
         - linux/arm64
@@ -57,7 +57,7 @@ services:
     command: | 
       sh -c "uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
     volumes:
-      - ./app:/app/app  # 로컬의 app 디렉토리를 컨테이너의 /app/app에 마운트(수정사항 즉시 반영)
+      - ./backend/app:/app/app  # 로컬의 app 디렉토리를 컨테이너의 /app/app에 마운트(수정사항 즉시 반영)
       - static_volume:/app/templates
     restart: always
     ports:
@@ -75,7 +75,7 @@ services:
     container_name: ai-worker
     build:
       context: .  # 프로젝트 루트를 빌드 컨텍스트로 지정
-      dockerfile: ai_worker/Dockerfile  # Dockerfile 위치 지정
+      dockerfile: ai/Dockerfile  # Dockerfile 위치 지정
       platforms:
         - linux/amd64
         - linux/arm64
