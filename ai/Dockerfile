@@ -12,7 +12,7 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --group ai --no-dev --frozen
 
 # 4. 로컬 소스 코드를 컨테이너 내부로 복사합니다.
-COPY ./ai_worker ./app
+COPY ./ai ./app
 
 # 5. 해당 이미지를 활용하여 도커컨테이너 실행시 실행되는 명령어입니다.
 # 아래 커맨드를 수정한 뒤에 사용합니다.
