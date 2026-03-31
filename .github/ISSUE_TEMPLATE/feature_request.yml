@@ -1,0 +1,66 @@
+name: "✨ 기능 요청 (Feature Request)"
+description: "새로운 기능 추가를 요청합니다."
+title: "[Feat] "
+labels: ["feat"]
+assignees: []
+
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: "📂 작업 영역"
+      description: "어떤 영역에 해당하는 기능인가요?"
+      options:
+        - Frontend
+        - Backend
+        - AI
+        - Data
+        - Infra
+        - 기타
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: "📌 기능 설명"
+      description: "구현할 기능을 구체적으로 설명해 주세요."
+      placeholder: |
+        예시: 사용자가 건강검진 수치를 입력하면 심혈관 위험도를 예측하는 API를 구현합니다.
+    validations:
+      required: true
+
+  - type: textarea
+    id: tasks
+    attributes:
+      label: "✅ 작업 목록"
+      description: "기능 구현을 위한 세부 작업을 체크리스트로 작성해 주세요."
+      placeholder: |
+        - [ ] API 엔드포인트 설계
+        - [ ] 서비스 로직 구현
+        - [ ] 테스트 코드 작성
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: "🎯 완료 조건"
+      description: "이 기능이 완료되었다고 판단할 수 있는 기준을 작성해 주세요."
+      placeholder: |
+        - API 호출 시 위험도(%)와 심혈관 나이가 정상 반환된다.
+        - 테스트 코드가 통과한다.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reference
+    attributes:
+      label: "🔗 참고 자료 (선택)"
+      description: "관련 문서, 디자인, API 스펙 등 참고 자료가 있다면 첨부해 주세요."
+      placeholder: |
+        - Figma 링크
+        - API 문서 링크
+        - 관련 이슈 번호: #
+    validations:
+      required: false
