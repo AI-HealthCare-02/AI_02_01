@@ -16,4 +16,4 @@ COPY ./ai ./app
 
 # 5. 해당 이미지를 활용하여 도커컨테이너 실행시 실행되는 명령어입니다.
 # 아래 커맨드를 수정한 뒤에 사용합니다.
-CMD ["echo", "'hello world'"]
+CMD ["sleep", "infinity"]
