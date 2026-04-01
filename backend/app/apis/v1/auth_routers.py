@@ -1,35 +1,52 @@
 from typing import Annotated
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, status
 from fastapi.responses import JSONResponse as Response
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import config
 from app.core.config import Env
-from app.dtos.auth import LoginRequest, LoginResponse, SignUpRequest, TokenRefreshResponse
+from app.db.databases import get_db_session
+from app.dtos.auth import GoogleLoginRequest, GoogleLoginResponse, TokenRefreshResponse
 from app.services.auth import AuthService
+from app.services.google_oauth import GoogleOAuthService
 from app.services.jwt import JwtService
 
 auth_router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-@auth_router.post("/signup", status_code=status.HTTP_201_CREATED)
-async def signup(
-    request: SignUpRequest,
-    auth_service: Annotated[AuthService, Depends(AuthService)],
-) -> Response:
-    await auth_service.signup(request)
-    return Response(content={"detail": "회원가입이 성공적으로 완료되었습니다."}, status_code=status.HTTP_201_CREATED)
+@auth_router.get("/google/authorize")
+async def google_authorize() -> dict:
+    params = urlencode(
+        {
+            "client_id": config.GOOGLE_CLIENT_ID,
+            "redirect_uri": config.GOOGLE_REDIRECT_URI,
+            "response_type": "code",
+            "scope": "openid email profile",
+            "access_type": "offline",
+        }
+    )
+    return {"authorization_url": f"https://accounts.google.com/o/oauth2/v2/auth?{params}"}
 
 
-@auth_router.post("/login", response_model=LoginResponse, status_code=status.HTTP_200_OK)
-async def login(
-    request: LoginRequest,
-    auth_service: Annotated[AuthService, Depends(AuthService)],
+@auth_router.post("/google/login", response_model=GoogleLoginResponse, status_code=status.HTTP_200_OK)
+async def google_login(
+    request: GoogleLoginRequest,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    google_oauth: Annotated[GoogleOAuthService, Depends(GoogleOAuthService)],
 ) -> Response:
-    user = await auth_service.authenticate(request)
-    tokens = await auth_service.login(user)
+    token_data = await google_oauth.exchange_code(request.code)
+    google_user = await google_oauth.get_user_info(token_data["access_token"])
+    auth_service = AuthService(session)
+    tokens, is_new_user = await auth_service.google_login(google_user)
+
     resp = Response(
-        content=LoginResponse(access_token=str(tokens["access_token"])).model_dump(), status_code=status.HTTP_200_OK
+        content=GoogleLoginResponse(
+            access_token=str(tokens["access_token"]),
+            is_new_user=is_new_user,
+        ).model_dump(),
+        status_code=status.HTTP_200_OK,
     )
     resp.set_cookie(
         key="refresh_token",
