@@ -25,6 +25,10 @@ SCALE_COLS = ['age', 'height', 'weight', 'ap_hi', 'ap_lo', 'bmi']
 FACTOR_MAP = {
     'ap_hi': '고혈압',
     'ap_lo': '고혈압',
+    'hypertension': '고혈압',        
+    'high_cholesterol': '고콜레스테롤', 
+    'obesity': '비만',              
+    'age_bmi': '고령·과체중',         
     'cholesterol': '고콜레스테롤',
     'gluc': '고혈당',
     'bmi': '과체중',
@@ -33,8 +37,8 @@ FACTOR_MAP = {
     'active': '운동부족',
     'age': '고령',
     'gender': '성별',
+    'pulse_pressure': '고혈압',
     'risk_class': '복합위험군',
-    'pulse_pressure': '고혈압'
 }
 
 # 챌린지 달성 시 보정값 (의학 문헌 기반)
@@ -60,9 +64,6 @@ CORRECTION_VALUES = {
 
 
 def preprocess(user_data: dict) -> pd.DataFrame:
-    """
-    사용자 입력 데이터 전처리
-    """
     df = pd.DataFrame([user_data])
 
     # BMI 계산
@@ -70,6 +71,9 @@ def preprocess(user_data: dict) -> pd.DataFrame:
 
     # 맥압 계산
     df['pulse_pressure'] = df['ap_hi'] - df['ap_lo']
+
+    # 나이 × BMI 상호작용
+    df['age_bmi'] = df['age'] * df['bmi']
 
     # 복합 위험군 클래스 생성
     df['hypertension'] = (df['ap_hi'] >= 140).astype(int)
@@ -83,9 +87,15 @@ def preprocess(user_data: dict) -> pd.DataFrame:
         df['alco']
     )
 
-    # 불필요한 컬럼 제거
-    df = df.drop(columns=['hypertension', 'high_cholesterol', 'obesity'],
-                 errors='ignore')
+    # 모델 학습 피처 순서에 맞게 정렬 (18개)
+    feature_cols = [
+        'age', 'gender', 'height', 'weight',
+        'ap_hi', 'ap_lo', 'cholesterol', 'gluc',
+        'smoke', 'alco', 'active', 'bmi',
+        'hypertension', 'high_cholesterol', 'obesity',
+        'risk_class', 'pulse_pressure', 'age_bmi'
+    ]
+    df = df[feature_cols]
 
     # 정규화
     df[SCALE_COLS] = scaler.transform(df[SCALE_COLS])
@@ -138,7 +148,6 @@ def calculate_heart_age(actual_age: int,
 
 def get_top_risk_factors(df_input: pd.DataFrame,
                          n: int = 3) -> list:
-    """SHAP 기반 위험 요인 상위 n개 추출"""
     shap_values = explainer.shap_values(df_input)
 
     shap_df = pd.DataFrame({
@@ -146,18 +155,19 @@ def get_top_risk_factors(df_input: pd.DataFrame,
         'shap_value': abs(shap_values[0])
     }).sort_values('shap_value', ascending=False)
 
-    top_features = shap_df.head(n)['feature'].tolist()
-
-    # 중복 제거 (ap_hi, ap_lo 둘 다 고혈압)
     result = []
     seen = set()
-    for f in top_features:
-        label = FACTOR_MAP.get(f, f)
+
+    # 전체 피처 돌면서 중복 제거 후 n개 채우기
+    for _, row in shap_df.iterrows():
+        label = FACTOR_MAP.get(row['feature'], row['feature'])
         if label not in seen:
             seen.add(label)
             result.append(label)
+        if len(result) == n:
+            break
 
-    return result[:n]
+    return result
 
 
 def predict(user_data: dict) -> dict:
