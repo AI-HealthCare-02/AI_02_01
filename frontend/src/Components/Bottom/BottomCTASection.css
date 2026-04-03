@@ -1,0 +1,117 @@
+.bottom-cta-section {
+  background: linear-gradient(135deg, #4C9A5F 0%, #6DBA7B 100%);
+  border-radius: 28px;
+  margin: 40px auto 80px;
+  padding: 48px;
+  color: #ffffff;
+  max-width: 1200px;
+}
+
+.bottom-cta-content {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: 40px;
+  align-items: center;
+}
+
+.bottom-cta-text {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.bottom-cta-label {
+  display: inline-block;
+  width: fit-content;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background-color: rgba(255, 255, 255, 0.14);
+  font-size: 14px;
+  font-weight: 600;
+  color: #edf7ef;
+  margin: 0;
+}
+
+.bottom-cta-text h2 {
+  font-size: 40px;
+  line-height: 1.25;
+  font-weight: 800;
+  margin: 0;
+}
+
+.bottom-cta-text p {
+  font-size: 16px;
+  line-height: 1.7;
+  color: #eff8f1;
+  margin: 0;
+}
+
+.bottom-cta-button {
+  margin-top: 8px;
+  width: fit-content;
+  padding: 14px 24px;
+  border: none;
+  border-radius: 14px;
+  background-color: #ffffff;
+  color: #4C9A5F;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.bottom-cta-button:hover {
+  transform: translateY(-2px);
+  opacity: 0.95;
+}
+
+.bottom-cta-calendar {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 42px);
+  gap: 10px;
+}
+
+.calendar-day {
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  background-color: rgba(255, 255, 255, 0.12);
+  color: #edf7ef;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.calendar-day.active {
+  background-color: #E8F5EA;
+  color: #4C9A5F;
+}
+
+@media (max-width: 900px) {
+  .bottom-cta-content {
+    grid-template-columns: 1fr;
+  }
+
+  .bottom-cta-text h2 {
+    font-size: 32px;
+  }
+
+  .calendar-grid {
+    grid-template-columns: repeat(7, 36px);
+    gap: 8px;
+  }
+
+  .calendar-day {
+    width: 36px;
+    height: 36px;
+    font-size: 13px;
+  }
+}
