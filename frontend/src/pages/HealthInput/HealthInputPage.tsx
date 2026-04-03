@@ -1,11 +1,15 @@
-import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import "../../App.css";
+import { useState } from "react";
+import Layout from "../../Components/Layout/Layout";
 
-export default function HealthInputPage() {
+const HealthInputPage = () => {
   const navigate = useNavigate();
 
-  const [form, setForm] = useState({
+  const [smoking, setSmoking] = useState<boolean | null>(null);
+  const [drinking, setDrinking] = useState<boolean | null>(null);
+  const [exercise, setExercise] = useState<boolean | null>(null);
+
+  const [formData, setFormData] = useState({
     nickname: "",
     age: "",
     gender: "",
@@ -13,259 +17,297 @@ export default function HealthInputPage() {
     weight: "",
     systolic: "",
     diastolic: "",
-    cholesterol: "",
     glucose: "",
-    smoking: "no",
+    cholesterol: "",
     smokingFrequency: "",
-    drinking: "no",
     drinkingFrequency: "",
-    exercise: "no",
     exerciseFrequency: "",
   });
 
-  const handleChange = (key: string, value: string) => {
-    setForm((prev) => ({
+  const handleInputChange = (key: string, value: string) => {
+    setFormData((prev) => ({
       ...prev,
       [key]: value,
     }));
   };
 
   const handleSubmit = () => {
-    console.log("입력 데이터:", form);
-    navigate("/dashboard");
+    if (
+      !formData.nickname ||
+      !formData.age ||
+      !formData.gender ||
+      !formData.height ||
+      !formData.weight ||
+      !formData.systolic ||
+      !formData.diastolic ||
+      !formData.glucose ||
+      !formData.cholesterol
+    ) {
+      alert("필수 항목을 모두 입력해주세요.");
+      return;
+    }
+
+    const healthData = {
+      ...formData,
+      smoking,
+      drinking,
+      exercise,
+    };
+
+    localStorage.setItem("healthData", JSON.stringify(healthData));
+    navigate("/result");
   };
 
   return (
-    <div className="health-page">
-      <div className="health-container">
-        <header className="health-header">
-          <div className="health-logo">MyHealthBuddy</div>
-          <button className="health-login-button">로그인</button>
-        </header>
-
-        <h1 className="health-title">건강 데이터 입력</h1>
-
-        <div className="health-form-card">
-          <div className="health-grid">
-            <section className="health-section">
-              <h2 className="section-title">기본 정보</h2>
-
-              <label className="input-label">닉네임</label>
-              <input
-                className="text-input"
-                value={form.nickname}
-                onChange={(e) => handleChange("nickname", e.target.value)}
-              />
-
-              <label className="input-label">나이</label>
-              <input
-                className="text-input"
-                type="number"
-                value={form.age}
-                onChange={(e) => handleChange("age", e.target.value)}
-              />
-
-              <label className="input-label">성별</label>
-              <div className="choice-row">
-                <button
-                  type="button"
-                  className={`choice-button ${form.gender === "male" ? "selected" : ""}`}
-                  onClick={() => handleChange("gender", "male")}
-                >
-                  남
-                </button>
-                <button
-                  type="button"
-                  className={`choice-button ${form.gender === "female" ? "selected" : ""}`}
-                  onClick={() => handleChange("gender", "female")}
-                >
-                  여
-                </button>
-              </div>
-
-              <label className="input-label">키</label>
-              <input
-                className="text-input"
-                type="number"
-                value={form.height}
-                onChange={(e) => handleChange("height", e.target.value)}
-              />
-
-              <label className="input-label">체중</label>
-              <input
-                className="text-input"
-                type="number"
-                value={form.weight}
-                onChange={(e) => handleChange("weight", e.target.value)}
-              />
-            </section>
-
-            <section className="health-section">
-              <h2 className="section-title">건강검진 수치</h2>
-
-              <label className="input-label">수축기 혈압</label>
-              <input
-                className="text-input"
-                type="number"
-                value={form.systolic}
-                onChange={(e) => handleChange("systolic", e.target.value)}
-              />
-
-              <label className="input-label">이완기 혈압</label>
-              <input
-                className="text-input"
-                type="number"
-                value={form.diastolic}
-                onChange={(e) => handleChange("diastolic", e.target.value)}
-              />
-
-              <label className="input-label">총 콜레스테롤</label>
-              <input
-                className="text-input"
-                type="number"
-                value={form.cholesterol}
-                onChange={(e) => handleChange("cholesterol", e.target.value)}
-              />
-
-              <label className="input-label">공복혈당</label>
-              <input
-                className="text-input"
-                type="number"
-                value={form.glucose}
-                onChange={(e) => handleChange("glucose", e.target.value)}
-              />
-            </section>
+    <Layout>
+      <div className="checkup-page">
+        <div className="checkup-wrapper">
+          <div className="checkup-header">
+            <p className="checkup-step">건강 데이터 입력</p>
+            <h1 className="checkup-title">건강검진 정보를 입력해주세요</h1>
+            <p className="checkup-desc">
+              기본 건강 수치와 생활습관 정보를 입력하면 결과를 분석해드려요.
+            </p>
           </div>
 
-          <section className="health-section lifestyle-section">
-            <h2 className="section-title">생활 습관</h2>
+          <div className="checkup-card">
+            <div className="habit-section">
+              <h2 className="section-title">기본 정보</h2>
 
-            <div className="habit-grid">
-              <div className="habit-item">
-                <label className="input-label">흡연 여부</label>
-                <div className="choice-row">
-                  <button
-                    type="button"
-                    className={`choice-button ${form.smoking === "yes" ? "selected" : ""}`}
-                    onClick={() => handleChange("smoking", "yes")}
-                  >
-                    예
-                  </button>
-                  <button
-                    type="button"
-                    className={`choice-button ${form.smoking === "no" ? "selected" : ""}`}
-                    onClick={() => {
-                      handleChange("smoking", "no");
-                      handleChange("smokingFrequency", "");
-                    }}
-                  >
-                    아니오
-                  </button>
+              <div className="checkup-grid">
+                <div className="input-group">
+                  <label>닉네임</label>
+                  <input
+                    type="text"
+                    placeholder="사용하실 닉네임을 입력하세요."
+                    value={formData.nickname}
+                    onChange={(e) => handleInputChange("nickname", e.target.value)}
+                  />
                 </div>
 
-                {form.smoking === "yes" && (
-                  <>
-                    <label className="input-label extra-label">흡연 빈도</label>
-                    <select
-                      className="text-input"
-                      value={form.smokingFrequency}
-                      onChange={(e) => handleChange("smokingFrequency", e.target.value)}
-                    >
-                      <option value="">선택</option>
-                      <option value="sometimes">가끔</option>
-                      <option value="weekly">주 1~3회</option>
-                      <option value="daily">매일</option>
-                    </select>
-                  </>
-                )}
-              </div>
-
-              <div className="habit-item">
-                <label className="input-label">음주 여부</label>
-                <div className="choice-row">
-                  <button
-                    type="button"
-                    className={`choice-button ${form.drinking === "yes" ? "selected" : ""}`}
-                    onClick={() => handleChange("drinking", "yes")}
-                  >
-                    예
-                  </button>
-                  <button
-                    type="button"
-                    className={`choice-button ${form.drinking === "no" ? "selected" : ""}`}
-                    onClick={() => {
-                      handleChange("drinking", "no");
-                      handleChange("drinkingFrequency", "");
-                    }}
-                  >
-                    아니오
-                  </button>
+                <div className="input-group">
+                  <label>나이</label>
+                  <input
+                    type="number"
+                    placeholder="예: 50"
+                    value={formData.age}
+                    onChange={(e) => handleInputChange("age", e.target.value)}
+                  />
                 </div>
 
-                {form.drinking === "yes" && (
-                  <>
-                    <label className="input-label extra-label">음주 빈도</label>
-                    <select
-                      className="text-input"
-                      value={form.drinkingFrequency}
-                      onChange={(e) => handleChange("drinkingFrequency", e.target.value)}
-                    >
-                      <option value="">선택</option>
-                      <option value="sometimes">가끔</option>
-                      <option value="weekly">주 1~3회</option>
-                      <option value="often">주 4회 이상</option>
-                    </select>
-                  </>
-                )}
-              </div>
-
-              <div className="habit-item">
-                <label className="input-label">운동 여부</label>
-                <div className="choice-row">
-                  <button
-                    type="button"
-                    className={`choice-button ${form.exercise === "yes" ? "selected" : ""}`}
-                    onClick={() => handleChange("exercise", "yes")}
+                <div className="input-group">
+                  <label>성별</label>
+                  <select
+                    value={formData.gender}
+                    onChange={(e) => handleInputChange("gender", e.target.value)}
                   >
-                    예
-                  </button>
-                  <button
-                    type="button"
-                    className={`choice-button ${form.exercise === "no" ? "selected" : ""}`}
-                    onClick={() => {
-                      handleChange("exercise", "no");
-                      handleChange("exerciseFrequency", "");
-                    }}
-                  >
-                    아니오
-                  </button>
+                    <option value="">선택해주세요</option>
+                    <option value="female">여성</option>
+                    <option value="male">남성</option>
+                  </select>
                 </div>
 
-                {form.exercise === "yes" && (
-                  <>
-                    <label className="input-label extra-label">운동 빈도</label>
-                    <select
-                      className="text-input"
-                      value={form.exerciseFrequency}
-                      onChange={(e) => handleChange("exerciseFrequency", e.target.value)}
-                    >
-                      <option value="">선택</option>
-                      <option value="weekly1">주 1회</option>
-                      <option value="weekly3">주 2~3회</option>
-                      <option value="weekly5">주 4~5회</option>
-                      <option value="daily">거의 매일</option>
-                    </select>
-                  </>
-                )}
+                <div className="input-group">
+                  <label>신장(cm)</label>
+                  <input
+                    type="number"
+                    placeholder="예: 175"
+                    value={formData.height}
+                    onChange={(e) => handleInputChange("height", e.target.value)}
+                  />
+                </div>
+
+                <div className="input-group">
+                  <label>체중(kg)</label>
+                  <input
+                    type="number"
+                    placeholder="예: 80"
+                    value={formData.weight}
+                    onChange={(e) => handleInputChange("weight", e.target.value)}
+                  />
+                </div>
               </div>
             </div>
-          </section>
-        </div>
 
-        <button className="analyze-button" onClick={handleSubmit}>
-          분석하기
-        </button>
+            <div className="habit-section">
+              <h2 className="section-title">건강 검진 수치</h2>
+
+              <div className="checkup-grid">
+                <div className="input-group">
+                  <label>수축기 혈압(mmHg)</label>
+                  <input
+                    type="number"
+                    placeholder="예: 120"
+                    value={formData.systolic}
+                    onChange={(e) => handleInputChange("systolic", e.target.value)}
+                  />
+                </div>
+
+                <div className="input-group">
+                  <label>이완기 혈압(mmHg)</label>
+                  <input
+                    type="number"
+                    placeholder="예: 80"
+                    value={formData.diastolic}
+                    onChange={(e) => handleInputChange("diastolic", e.target.value)}
+                  />
+                </div>
+
+                <div className="input-group">
+                  <label>공복 혈당(mg/dL)</label>
+                  <input
+                    type="number"
+                    placeholder="예: 95"
+                    value={formData.glucose}
+                    onChange={(e) => handleInputChange("glucose", e.target.value)}
+                  />
+                </div>
+
+                <div className="input-group">
+                  <label>총 콜레스테롤(mg/dL)</label>
+                  <input
+                    type="number"
+                    placeholder="예: 180"
+                    value={formData.cholesterol}
+                    onChange={(e) => handleInputChange("cholesterol", e.target.value)}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="habit-section">
+              <h2 className="section-title">생활습관 정보</h2>
+
+              <div className="habit-grid">
+                <div className="habit-item">
+                  <label>흡연 여부</label>
+
+                  <div className="option-row">
+                    <button
+                      type="button"
+                      className={`option-btn ${smoking === true ? "active" : ""}`}
+                      onClick={() => setSmoking(true)}
+                    >
+                      예
+                    </button>
+
+                    <button
+                      type="button"
+                      className={`option-btn ${smoking === false ? "active" : ""}`}
+                      onClick={() => {
+                        setSmoking(false);
+                        handleInputChange("smokingFrequency", "");
+                      }}
+                    >
+                      아니오
+                    </button>
+                  </div>
+
+                  {smoking === true && (
+                    <select
+                      value={formData.smokingFrequency}
+                      onChange={(e) =>
+                        handleInputChange("smokingFrequency", e.target.value)
+                      }
+                    >
+                      <option value="">흡연 빈도 선택</option>
+                      <option value="주 1~2회">주 1~2회</option>
+                      <option value="주 3~6회">주 3~6회</option>
+                      <option value="매일">매일</option>
+                    </select>
+                  )}
+                </div>
+
+                <div className="habit-item">
+                  <label>음주 여부</label>
+
+                  <div className="option-row">
+                    <button
+                      type="button"
+                      className={`option-btn ${drinking === true ? "active" : ""}`}
+                      onClick={() => setDrinking(true)}
+                    >
+                      예
+                    </button>
+
+                    <button
+                      type="button"
+                      className={`option-btn ${drinking === false ? "active" : ""}`}
+                      onClick={() => {
+                        setDrinking(false);
+                        handleInputChange("drinkingFrequency", "");
+                      }}
+                    >
+                      아니오
+                    </button>
+                  </div>
+
+                  {drinking === true && (
+                    <select
+                      value={formData.drinkingFrequency}
+                      onChange={(e) =>
+                        handleInputChange("drinkingFrequency", e.target.value)
+                      }
+                    >
+                      <option value="">음주 빈도 선택</option>
+                      <option value="주 1회">주 1회</option>
+                      <option value="주 2~3회">주 2~3회</option>
+                      <option value="주 4회 이상">주 4회 이상</option>
+                    </select>
+                  )}
+                </div>
+
+                <div className="habit-item">
+                  <label>운동 여부</label>
+
+                  <div className="option-row">
+                    <button
+                      type="button"
+                      className={`option-btn ${exercise === true ? "active" : ""}`}
+                      onClick={() => setExercise(true)}
+                    >
+                      예
+                    </button>
+
+                    <button
+                      type="button"
+                      className={`option-btn ${exercise === false ? "active" : ""}`}
+                      onClick={() => {
+                        setExercise(false);
+                        handleInputChange("exerciseFrequency", "");
+                      }}
+                    >
+                      아니오
+                    </button>
+                  </div>
+
+                  {exercise === true && (
+                    <select
+                      value={formData.exerciseFrequency}
+                      onChange={(e) =>
+                        handleInputChange("exerciseFrequency", e.target.value)
+                      }
+                    >
+                      <option value="">운동 빈도 선택</option>
+                      <option value="주 1~2회">주 1~2회</option>
+                      <option value="주 3~4회">주 3~4회</option>
+                      <option value="주 5회 이상">주 5회 이상</option>
+                    </select>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="checkup-action">
+              <button className="analyze-btn" onClick={handleSubmit}>
+                분석하기
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
-    </div>
+    </Layout>
   );
-}
+};
+
+export default HealthInputPage;
