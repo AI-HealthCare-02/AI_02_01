@@ -1,0 +1,188 @@
+.health-input-page {
+  min-height: 100vh;
+  background: #f7fbf8;
+  padding: 36px 24px 56px;
+}
+
+.health-input-container {
+  width: min(920px, 100%);
+  margin: 0 auto;
+}
+
+.health-input-header {
+  text-align: center;
+  margin-bottom: 28px;
+}
+
+.health-input-badge {
+  margin: 0 0 10px;
+  display: inline-flex;
+  align-items: center;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: #e8f5ea;
+  color: #4c9a5f;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.health-input-title {
+  margin: 0;
+  font-size: 40px;
+  font-weight: 800;
+  color: #1f2f24;
+  letter-spacing: -0.03em;
+}
+
+.health-input-desc {
+  margin: 12px 0 0;
+  color: #6d7c72;
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+.checkup-card {
+  background: #ffffff;
+  border: 1px solid rgba(76, 154, 95, 0.12);
+  border-radius: 28px;
+  padding: 28px;
+  box-shadow: 0 14px 30px rgba(31, 58, 38, 0.04);
+}
+
+.checkup-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px 18px;
+}
+
+.input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.input-group label,
+.habit-item label {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1f2f24;
+}
+
+.input-group input,
+.input-group select,
+.habit-item select {
+  min-height: 48px;
+  border: 1px solid rgba(76, 154, 95, 0.14);
+  border-radius: 14px;
+  padding: 0 14px;
+  background: #f8fbf8;
+  font-size: 14px;
+  color: #1f2f24;
+  outline: none;
+}
+
+.input-group input:focus,
+.input-group select:focus,
+.habit-item select:focus {
+  border-color: #6dba7b;
+  background: #ffffff;
+}
+
+.habit-section {
+  margin-top: 34px;
+  padding-top: 28px;
+  border-top: 1px solid rgba(76, 154, 95, 0.08);
+}
+
+.habit-section:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
+.section-title {
+  margin: 0 0 18px;
+  font-size: 30px;
+  font-weight: 800;
+  color: #1f2f24;
+  letter-spacing: -0.02em;
+}
+
+.habit-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px 28px;
+}
+
+.habit-item {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.option-row {
+  display: flex;
+  gap: 10px;
+}
+
+.option-btn {
+  min-width: 72px;
+  min-height: 42px;
+  border: 1px solid rgba(76, 154, 95, 0.14);
+  border-radius: 12px;
+  background: #ffffff;
+  color: #4f5d54;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.option-btn.active {
+  background: #e8f5ea;
+  border-color: #6dba7b;
+  color: #4c9a5f;
+}
+
+.checkup-action {
+  margin-top: 34px;
+  display: flex;
+  justify-content: center;
+}
+
+.analyze-btn {
+  min-width: 180px;
+  min-height: 52px;
+  border: none;
+  border-radius: 999px;
+  background: #4c9a5f;
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 12px 24px rgba(76, 154, 95, 0.18);
+}
+
+.analyze-btn:hover {
+  background: #3f8750;
+}
+
+@media (max-width: 768px) {
+  .health-input-page {
+    padding: 24px 16px 40px;
+  }
+
+  .health-input-title {
+    font-size: 30px;
+  }
+
+  .checkup-card {
+    padding: 20px;
+  }
+
+  .checkup-grid,
+  .habit-grid {
+    grid-template-columns: 1fr;
+  }
+}
