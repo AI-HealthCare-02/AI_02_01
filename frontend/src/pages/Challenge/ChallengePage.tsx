@@ -1,4 +1,4 @@
-import "../../App.css";
+import "./ChallengePage.css";
 
 export default function ChallengePage() {
   return (
