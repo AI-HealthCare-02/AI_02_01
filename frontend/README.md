@@ -70,6 +70,7 @@ export default defineConfig([
     },
   },
 ])
+```
 
 # 🌿 MyHealthBuddy
 
@@ -102,7 +103,6 @@ MyHealthBuddy는 사용자가 일상 건강 습관을 기록하고, 챌린지를
 ---
 
 ## 📁 프로젝트 구조
-
 ```
 frontend/
 └── src/
@@ -120,7 +120,6 @@ frontend/
     ├── main.tsx
     └── index.css
 ```
-
 ---
 
 ## 🚀 시작하기
