@@ -1,8 +1,10 @@
-export default function LandingPage() {
+import "../../App.css";
+
+export default function ChallengePage() {
   return (
-    <div>
-      <h1>MyHealthBuddy</h1>
-      <p>건강한 습관을 함께 만들어봐요.</p>
+    <div style={{ padding: "40px" }}>
+      <h1>챌린지 페이지</h1>
+      <p>여기서 사용자가 진행할 건강 챌린지를 보여주면 됩니다.</p>
     </div>
   );
 }
