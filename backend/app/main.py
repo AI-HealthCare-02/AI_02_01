@@ -1,7 +1,16 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.responses import ORJSONResponse
+
+# logging 기본 설정
+# - level=INFO: INFO 이상의 로그(INFO, WARNING, ERROR)만 출력, DEBUG는 무시
+# - format: 시간 | 로거이름 | 레벨 | 메시지 형식으로 출력
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(name)s | %(levelname)s | %(message)s",
+)
 
 from app.apis.v1 import v1_routers
 from app.database import Base
