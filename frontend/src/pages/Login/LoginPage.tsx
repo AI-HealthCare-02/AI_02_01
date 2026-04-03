@@ -1,37 +1,6 @@
-import { GoogleLogin } from "@react-oauth/google";
+import "../../App.css";
 
 const LoginPage = () => {
-  const handleGoogleSuccess = async (credentialResponse: any) => {
-    console.log("Google login success:", credentialResponse);
-
-    const idToken = credentialResponse.credential;
-
-    try {
-      const res = await fetch("http://localhost:8080/auth/google", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          token: idToken,
-        }),
-      });
-
-      const data = await res.json();
-      console.log("Backend response:", data);
-
-      // 나중에 백엔드 연결되면 사용
-      // localStorage.setItem("accessToken", data.accessToken);
-      // window.location.href = "/dashboard";
-    } catch (error) {
-      console.error("Google login failed:", error);
-    }
-  };
-
-  const handleGoogleError = () => {
-    console.log("Google Login Failed");
-  };
-
   return (
     <div className="login-page">
       <div className="login-shell">
@@ -75,22 +44,9 @@ const LoginPage = () => {
               </p>
             </div>
 
-            <div className="login-form-box">
-              <button className="mock-input-button" disabled>
-                이메일 로그인은 추후 연결 예정
-              </button>
-
-              <div className="divider">
-                <span>또는</span>
-              </div>
-
-              <div className="google-login-box">
-                <GoogleLogin
-                  onSuccess={handleGoogleSuccess}
-                  onError={handleGoogleError}
-                />
-              </div>
-            </div>
+            <button className="temp-login-button">
+              Google 로그인
+            </button>
 
             <p className="login-footer-text">
               로그인하면 MyHealthBuddy의 서비스 이용약관 및 개인정보 처리방침에
