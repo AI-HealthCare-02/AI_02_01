@@ -1,0 +1,31 @@
+.app-layout {
+  min-height: 100vh;
+  background: #f7fbf8;
+  display: grid;
+  grid-template-columns: 260px 1fr;
+}
+
+.app-layout-main {
+  min-width: 0;
+  padding: 0 24px 32px;
+}
+
+@media (max-width: 1024px) {
+  .app-layout {
+    grid-template-columns: 220px 1fr;
+  }
+
+  .app-layout-main {
+    padding: 0 20px 28px;
+  }
+}
+
+@media (max-width: 768px) {
+  .app-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .app-layout-main {
+    padding: 0 16px 24px;
+  }
+}

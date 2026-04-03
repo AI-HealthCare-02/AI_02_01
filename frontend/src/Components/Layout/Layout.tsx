@@ -1,19 +1,16 @@
-import type { ReactNode } from "react";
-import Header from "../Header/Header";
+import { ReactNode } from "react";
+import Sidebar from "./Sidebar";
+import "./Layout.css";
 
 interface LayoutProps {
   children: ReactNode;
 }
 
-const Layout = ({ children }: LayoutProps) => {
+export default function Layout({ children }: LayoutProps) {
   return (
-    <div className="app-shell">
-      <Header />
-      <main className="app-main">
-        <div className="page-container">{children}</div>
-      </main>
+    <div className="app-layout">
+      <Sidebar />
+      <main className="app-layout-main">{children}</main>
     </div>
   );
-};
-
-export default Layout;
+}

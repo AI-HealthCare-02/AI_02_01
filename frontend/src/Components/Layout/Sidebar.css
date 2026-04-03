@@ -1,0 +1,130 @@
+.sidebar {
+  min-height: 100vh;
+  background: #ffffff;
+  border-right: 1px solid rgba(76, 154, 95, 0.12);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 12px 16px 20px;
+  position: sticky;
+  top: 0;
+}
+
+.sidebar-top {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.sidebar-logo {
+  border: none;
+  background: transparent;
+  padding: 0;
+  text-align: left;
+  font-size: 24px;
+  font-weight: 800;
+  color: #4c9a5f;
+  letter-spacing: -0.03em;
+  cursor: pointer;
+}
+
+.sidebar-profile {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 18px;
+  background: #f7fbf8;
+  border: 1px solid rgba(76, 154, 95, 0.08);
+}
+
+.sidebar-profile-avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  background: #e8f5ea;
+  color: #4c9a5f;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.sidebar-profile-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-profile-name {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 800;
+  color: #1f2f24;
+}
+
+.sidebar-profile-sub {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #7a877f;
+}
+
+.sidebar-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sidebar-link {
+  display: flex;
+  align-items: center;
+  min-height: 46px;
+  padding: 0 14px;
+  border-radius: 14px;
+  text-decoration: none;
+  color: #5f6f64;
+  font-size: 14px;
+  font-weight: 700;
+  transition: all 0.2s ease;
+}
+
+.sidebar-link:hover {
+  background: #f3faf4;
+  color: #4c9a5f;
+}
+
+.sidebar-link.active {
+  background: #e8f5ea;
+  color: #4c9a5f;
+}
+
+.sidebar-bottom {
+  padding-top: 16px;
+  border-top: 1px solid rgba(76, 154, 95, 0.08);
+}
+
+.sidebar-logout-btn {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid rgba(76, 154, 95, 0.14);
+  background: #ffffff;
+  color: #4c9a5f;
+  border-radius: 14px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.sidebar-logout-btn:hover {
+  background: #f7fbf8;
+}
+
+@media (max-width: 768px) {
+  .sidebar {
+    position: static;
+    min-height: auto;
+    border-right: none;
+    border-bottom: 1px solid rgba(76, 154, 95, 0.12);
+  }
+}
