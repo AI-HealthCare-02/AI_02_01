@@ -1,6 +1,6 @@
-import Header from "../../components/Header/Header";
-import HeroSection from "../../components/Hero/HeroSection";
-import FeatureSection from "../../components/Feature/FeatureSection";
+import Header from "../../Components/Header/Header";
+import HeroSection from "../../Components/Hero/HeroSection";
+import FeatureSection from "../../Components/Feature/FeatureSection";
 import "../../App.css";
 
 export default function LandingPage() {
