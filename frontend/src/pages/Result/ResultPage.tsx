@@ -1,5 +1,6 @@
 import { useNavigate } from "react-router-dom";
-import "../../App.css";
+import Layout from "../../components/Layout/Layout";
+import "./ResultPage.css";
 
 const mockChallenges = [
   {
@@ -76,93 +77,116 @@ export default function ResultPage() {
       ? "현재 상태는 즉각적인 고위험군으로 보이진 않지만, 혈압·혈당·생활습관 중 일부가 심혈관 건강에 영향을 줄 수 있어요. 작은 생활습관 변화만으로도 충분히 좋은 방향으로 개선할 수 있습니다."
       : "현재 입력 기준으로는 비교적 안정적인 상태로 보여요. 다만 심혈관 건강은 생활습관의 영향을 크게 받기 때문에 운동, 수면, 식습관을 꾸준히 유지하는 것이 중요합니다.";
 
+  const riskClassName =
+    riskLevel === "높음"
+      ? "high"
+      : riskLevel === "낮음"
+      ? "low"
+      : "medium";
+
   return (
-    <div className="result-page">
-      <div className="result-shell">
-        <aside className="result-sidebar">
-          <div className="sidebar-profile">
-            <div className="profile-circle">B</div>
-            <div className="profile-name">{nickname} 님</div>
+    <Layout>
+      <div className="result-page">
+        <section className="result-topbar">
+          <div className="result-heading">
+            <p className="result-badge">🫀 AI 건강 분석 결과</p>
+            <h1 className="result-title">{nickname} 님의 심혈관 건강 리포트</h1>
+            <p className="result-subtitle">
+              건강검진 수치와 생활습관 정보를 바탕으로 분석한 결과예요.
+            </p>
           </div>
 
-          <nav className="sidebar-nav">
-            <button className="sidebar-item">대시보드</button>
-            <button className="sidebar-item active">AI 건강 분석</button>
-            <button className="sidebar-item">챌린지</button>
-            <button className="sidebar-item">식단 분석</button>
-            <button className="sidebar-item">성장 기록</button>
-            <button className="sidebar-item">마이페이지</button>
-          </nav>
-        </aside>
+          <div className={`result-level-pill ${riskClassName}`}>
+            심혈관 위험도 {riskLevel}
+          </div>
+        </section>
 
-        <main className="result-content">
-          <h1 className="result-title">{nickname} 님의 AI 건강 분석 결과</h1>
+        <section className="result-summary-grid">
+          <div className="result-summary-card">
+            <p className="result-summary-label">심혈관 위험도</p>
+            <h3 className={`result-summary-value ${riskClassName}`}>{riskLevel}</h3>
+            <p className="result-summary-sub">현재 생활습관과 수치 기준</p>
+          </div>
 
-          <section className="summary-card-row">
-            <div className="summary-card">
-              <div className="summary-label">심혈관 위험도</div>
-              <div className="summary-value">{riskLevel}</div>
+          <div className="result-summary-card">
+            <p className="result-summary-label">심혈관 나이</p>
+            <h3 className="result-summary-value">{cardioAge}세</h3>
+            <p className="result-summary-sub">실제 나이 대비 추정</p>
+          </div>
+
+          <div className="result-summary-card">
+            <p className="result-summary-label">건강 점수</p>
+            <h3 className="result-summary-value">{healthScore}점</h3>
+            <p className="result-summary-sub">종합 건강 상태 점수</p>
+          </div>
+        </section>
+
+        <section className="result-main-grid">
+          <div className="result-card">
+            <div className="result-card-header">
+              <h2 className="result-card-title">주요 위험 요인</h2>
             </div>
 
-            <div className="summary-card">
-              <div className="summary-label">심혈관 나이</div>
-              <div className="summary-value">{cardioAge}세</div>
-            </div>
-
-            <div className="summary-card">
-              <div className="summary-label">건강 점수</div>
-              <div className="summary-value">{healthScore}점</div>
-            </div>
-          </section>
-
-          <section className="analysis-card">
-            <h2 className="analysis-title">주요 위험 요인</h2>
-            <ul className="risk-list">
+            <ul className="result-risk-list">
               {riskFactors.map((factor, index) => (
-                <li key={index}>{factor}</li>
+                <li className="result-risk-item" key={index}>
+                  <span className="result-risk-dot" />
+                  <span>{factor}</span>
+                </li>
               ))}
             </ul>
-          </section>
-
-          <section className="analysis-card">
-            <h2 className="analysis-title">AI 종합 코멘트</h2>
-            <p className="analysis-text">{aiComment}</p>
-          </section>
-
-          <section className="analysis-card">
-            <div className="challenge-header-row">
-              <h2 className="analysis-title">추천 챌린지</h2>
-            </div>
-
-            <p className="challenge-login-message">
-              챌린지를 확인하려면 로그인 또는 회원가입이 필요해요.
-            </p>
-
-            <div className="challenge-card-list">
-              {mockChallenges.map((challenge, index) => (
-                <div className="challenge-card" key={index}>
-                  <div className="challenge-card-inner locked">
-                    <div className="challenge-lock">🔒</div>
-                    <div className="challenge-title">{challenge.title}</div>
-                    <div className="challenge-description">{challenge.description}</div>
-                  </div>
-
-                  <button
-                    className="challenge-unlock-button"
-                    onClick={() => navigate("/login")}
-                  >
-                    로그인하고 챌린지 보기
-                  </button>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          <div className="result-warning">
-            입력한 건강 데이터는 참고용 분석 결과이며 실제 진단을 대체하지 않습니다.
           </div>
-        </main>
+
+          <div className="result-card">
+            <div className="result-card-header">
+              <h2 className="result-card-title">AI 종합 코멘트</h2>
+            </div>
+
+            <p className="result-ai-comment">{aiComment}</p>
+          </div>
+        </section>
+
+        <section className="result-card">
+          <div className="result-card-header challenge-header-row">
+            <div>
+              <p className="result-section-eyebrow">추천 루틴</p>
+              <h2 className="result-card-title">추천 챌린지</h2>
+            </div>
+
+            <button
+              className="result-primary-btn"
+              onClick={() => navigate("/login")}
+            >
+              로그인하고 챌린지 보기
+            </button>
+          </div>
+
+          <p className="result-card-desc">
+            챌린지를 확인하려면 로그인 또는 회원가입이 필요해요.
+          </p>
+
+          <div className="result-challenge-grid">
+            {mockChallenges.map((challenge, index) => (
+              <div className="result-challenge-card" key={index}>
+                <div className="result-challenge-lock">🔒</div>
+                <h3 className="result-challenge-title">{challenge.title}</h3>
+                <p className="result-challenge-desc">{challenge.description}</p>
+
+                <button
+                  className="result-outline-btn"
+                  onClick={() => navigate("/login")}
+                >
+                  로그인하고 보기
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <p className="result-warning">
+          입력한 건강 데이터는 참고용 분석 결과이며 실제 진단을 대체하지 않습니다.
+        </p>
       </div>
-    </div>
+    </Layout>
   );
 }
