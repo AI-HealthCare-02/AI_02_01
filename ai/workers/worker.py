@@ -8,8 +8,8 @@ import os
 import json
 from dotenv import load_dotenv
 from openai import OpenAI
-from predicts import predicts, recalculate_risk
-from prompts import SYSTEM_PROMPT, build_user_prompt
+from predict import predict, recalculate_risk
+from prompt import SYSTEM_PROMPT, build_user_prompt
 
 # 환경변수 로드
 load_dotenv('/Users/admin/cardiovascular_ml/envs/local.env')
@@ -21,7 +21,7 @@ def ml1_predict(user_data: dict) -> dict:
     """
     건강검진 수치 → 위험도 예측
     """
-    return predicts(user_data)
+    return predict(user_data)
 
 
 # ── ML2 함수 (ChatGPT 코멘트)
