@@ -1,5 +1,5 @@
 """
-ML2 ChatGPT System Prompt
+ML1 ChatGPT System Prompt
 심혈관 건강 코멘트 생성용
 model: gpt-4o-mini
 temperature: 0
