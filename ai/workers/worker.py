@@ -1,7 +1,6 @@
 """
 AI Worker 통합 모듈
-ML1: XGBoost 위험도 예측
-ML2: ChatGPT 건강 코멘트 생성
+ML1: XGBoost 위험도 예측 + ChatGPT 건강 코멘트 생성
 """
 
 import os
@@ -16,16 +15,15 @@ load_dotenv('/Users/admin/cardiovascular_ml/envs/local.env')
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 
-# ── ML1 함수 (XGBoost 예측)
+# ── ML1 xgboost 함수 (XGBoost 예측)
 def ml1_predict(user_data: dict) -> dict:
     """
     건강검진 수치 → 위험도 예측
     """
     return predict(user_data)
 
-
-# ── ML2 함수 (ChatGPT 코멘트)
-def ml2_comment(user_info: dict) -> dict:
+# ── ML1 LLM 코멘트 함수
+def ml1_comment(user_info: dict) -> dict:
     """
     위험도 결과 → 건강 코멘트 생성
     """
@@ -53,33 +51,44 @@ def ml2_comment(user_info: dict) -> dict:
         }
 
 
-# ── ML1 + ML2 통합 함수
-def predict_and_comment(user_data: dict,
-                        nickname: str = '사용자',
-                        challenge_days: int = 0) -> dict:
+# ── ML1 통합 실행 함수
+def ml1_run(user_data: dict,
+            nickname: str = '사용자',
+            challenge_days: int = 0) -> dict:
     """
-    건강검진 수치 입력 → 위험도 예측 + 건강 코멘트 생성
-    """
-    # 1. ML1 예측
-    ml1_result = ml1_predict(user_data)
+    건강검진 수치 입력 → XGBoost 예측 + ChatGPT 코멘트 생성
 
-    # 2. ML2 코멘트 생성
+    Args:
+        user_data: 건강검진 수치
+        nickname: 사용자 닉네임
+        challenge_days: 챌린지 진행일
+
+    Returns:
+        {
+            "ml1_predict": 위험도 예측 결과,
+            "ml1_comment": 건강 코멘트
+        }
+    """
+    # 1. ML xgboost 예측
+    predict_result = ml1_predict(user_data)
+
+    # 2. ML1 LLM 코멘트 생성
     user_info = {
         'nickname': nickname,
         'age': user_data['age'],
-        'risk_percent': ml1_result['risk_percent'],
-        'risk_grade': ml1_result['risk_grade'],
-        'heart_age': ml1_result['heart_age'],
-        'top_risk_factors': ml1_result['top_risk_factors'],
+        'risk_percent': predict_result['risk_percent'],
+        'risk_grade': predict_result['risk_grade'],
+        'heart_age': predict_result['heart_age'],
+        'top_risk_factors': predict_result['top_risk_factors'],
         'smoke': user_data['smoke'],
         'alco': user_data['alco'],
         'challenge_days': challenge_days
     }
-    ml2_result = ml2_comment(user_info)
+    comment_result = ml1_comment(user_info)
 
     return {
-        "ml1": ml1_result,
-        "ml2": ml2_result
+        "ml1_predict": predict_result,
+        "ml1_comment": comment_result
     }
 
 
@@ -99,16 +108,16 @@ if __name__ == '__main__':
         'active': 0
     }
 
-    result = predict_and_comment(
+    result = ml1_run(
         sample,
         nickname='건강이',
         challenge_days=3
     )
 
-    print("=== ML1 결과 ===")
-    for k, v in result['ml1'].items():
+    print("=== ML1 XGBoost 결과 ===")
+    for k, v in result['ml1_predict'].items():
         print(f"{k}: {v}")
 
-    print("\n=== ML2 결과 ===")
-    for k, v in result['ml2'].items():
+    print("\n=== ML1 LLM 결과 ===")
+    for k, v in result['ml1_comment'].items():
         print(f"{k}: {v}")
