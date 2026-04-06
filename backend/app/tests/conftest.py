@@ -1,45 +1,42 @@
-import asyncio
-from collections.abc import Generator
-from typing import Any
-from unittest.mock import Mock, patch
+from collections.abc import AsyncGenerator
 
-import pytest
 import pytest_asyncio
-from _pytest.fixtures import FixtureRequest
-from tortoise import generate_config
-from tortoise.contrib.test import finalizer, initializer
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core import config
-from app.db.databases import TORTOISE_APP_MODELS
+from app.database import Base
+from app.db.databases import get_db_session
+from app.main import app
 
-TEST_BASE_URL = "http://test"
-TEST_DB_LABEL = "models"
-TEST_DB_TZ = "Asia/Seoul"
+TEST_DATABASE_URL = f"mysql+asyncmy://{config.DB_USER}:{config.DB_PASSWORD}@{config.DB_HOST}:{config.DB_PORT}/test"
 
-
-def get_test_db_config() -> dict[str, Any]:
-    tortoise_config = generate_config(
-        db_url=f"mysql://{config.DB_USER}:{config.DB_PASSWORD}@{config.DB_HOST}:{config.DB_PORT}/test",
-        app_modules={TEST_DB_LABEL: TORTOISE_APP_MODELS},
-        connection_label=TEST_DB_LABEL,
-        testing=True,
-    )
-    tortoise_config["timezone"] = TEST_DB_TZ
-
-    return tortoise_config
+test_engine = create_async_engine(TEST_DATABASE_URL, echo=False)
+test_session_factory = async_sessionmaker(bind=test_engine, class_=AsyncSession, expire_on_commit=False)
 
 
-@pytest.fixture(scope="session", autouse=True)
-def initialize(request: FixtureRequest) -> Generator[None, None]:
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    with patch("tortoise.contrib.test.getDBConfig", Mock(return_value=get_test_db_config())):
-        initializer(modules=TORTOISE_APP_MODELS)
+@pytest_asyncio.fixture(scope="session", autouse=True)
+async def setup_test_db():
+    async with test_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
     yield
-    finalizer()
-    loop.close()
+    async with test_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+    await test_engine.dispose()
 
 
-@pytest_asyncio.fixture(autouse=True, scope="session")  # type: ignore[type-var]
-def event_loop() -> None:
-    pass
+@pytest_asyncio.fixture(autouse=True)
+async def db_session() -> AsyncGenerator[AsyncSession, None]:
+    async with test_session_factory() as session:
+        # 테스트용 세션을 FastAPI 의존성에 오버라이드
+        app.dependency_overrides[get_db_session] = lambda: session
+        yield session
+        # 테스트 후 데이터 정리
+        await session.rollback()
+    app.dependency_overrides.clear()
+
+
+@pytest_asyncio.fixture
+async def client() -> AsyncGenerator[AsyncClient, None]:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        yield ac
