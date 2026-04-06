@@ -1,0 +1,64 @@
+name: "♻️ 리팩토링 (Refactor)"
+description: "코드 개선, 구조 변경, 성능 최적화 등을 요청합니다."
+title: "[Refactor] "
+labels: ["refactor"]
+assignees: []
+
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: "📂 작업 영역"
+      description: "리팩토링 대상 영역을 선택해 주세요."
+      options:
+        - Frontend
+        - Backend
+        - AI
+        - Data
+        - Infra
+        - 기타
+    validations:
+      required: true
+
+  - type: textarea
+    id: current
+    attributes:
+      label: "📌 현재 상태"
+      description: "현재 코드의 문제점이나 개선이 필요한 이유를 설명해 주세요."
+      placeholder: |
+        예시: AuthService에서 직접 UserRepository를 생성하고 있어 테스트 시 의존성 주입이 어렵습니다.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: "💡 개선 방안"
+      description: "어떻게 개선할 것인지 구체적으로 작성해 주세요."
+      placeholder: |
+        예시: 생성자 주입 패턴으로 변경하여 테스트 시 Mock 객체를 주입할 수 있도록 합니다.
+    validations:
+      required: true
+
+  - type: textarea
+    id: tasks
+    attributes:
+      label: "✅ 작업 목록"
+      description: "리팩토링 세부 작업을 체크리스트로 작성해 주세요."
+      placeholder: |
+        - [ ] AuthService 의존성 주입 변경
+        - [ ] 기존 테스트 코드 수정
+        - [ ] 정상 동작 확인
+    validations:
+      required: true
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: "⚠️ 영향 범위 (선택)"
+      description: "이 리팩토링이 영향을 미치는 파일이나 기능을 작성해 주세요."
+      placeholder: |
+        - backend/app/services/auth.py
+        - backend/app/tests/auth_apis/
+    validations:
+      required: false

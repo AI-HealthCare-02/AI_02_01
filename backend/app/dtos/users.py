@@ -1,41 +1,40 @@
-from datetime import date, datetime
+from datetime import datetime
 from typing import Annotated
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, Field
 
 from app.dtos.base import BaseSerializerModel
-from app.models.users import Gender
-from app.validators.common import optional_after_validator
-from app.validators.user_validators import validate_birthday, validate_phone_number
 
 
-class UserUpdateRequest(BaseModel):
-    name: Annotated[str | None, Field(None, min_length=2, max_length=20)]
-    email: Annotated[
-        EmailStr | None,
-        Field(None, max_length=40),
-    ]
-    phone_number: Annotated[
-        str | None,
-        Field(None, description="Available Format: +8201011112222, 01011112222, 010-1111-2222"),
-        optional_after_validator(validate_phone_number),
-    ]
-    birthday: Annotated[
-        date | None,
-        Field(None, description="Date Format: YYYY-MM-DD"),
-        optional_after_validator(validate_birthday),
-    ]
-    gender: Annotated[
-        Gender | None,
-        Field(None, description="'MALE' or 'FEMALE'"),
-    ]
+class ProfileUpdateRequest(BaseModel):
+    nickname: Annotated[str | None, Field(None, min_length=1, max_length=20, description="변경할 닉네임")]
+    profile_image: Annotated[str | None, Field(None, max_length=512, description="프로필 이미지 URL")]
 
 
 class UserInfoResponse(BaseSerializerModel):
     id: int
-    name: str
-    email: str
-    phone_number: str
-    birthday: date
-    gender: Gender
+    email: str | None
+    nickname: str
+    profile_image: str | None
+    role: str
+    gender: str | None
+    age: int | None
+    birth_year: int | None
+    character_stage: int
+    current_point: int
     created_at: datetime
+
+
+class DashboardResponse(BaseSerializerModel):
+    nickname: str
+    profile_image: str | None
+    character_stage: int
+    current_point: int
+    gender: str | None
+    age: int | None
+    birth_year: int | None
+    created_at: datetime
+
+
+class WithdrawResponse(BaseModel):
+    message: str
