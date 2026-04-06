@@ -11,7 +11,7 @@ from predict import predict, recalculate_risk
 from prompt import SYSTEM_PROMPT, build_user_prompt
 
 # 환경변수 로드
-load_dotenv('/Users/admin/cardiovascular_ml/envs/local.env')
+load_dotenv('/Users/admin/cardiovascular_ml/envs/.local.env')
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 
