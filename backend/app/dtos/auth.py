@@ -1,31 +1,47 @@
-from datetime import date
-from typing import Annotated
+from pydantic import BaseModel
 
-from pydantic import AfterValidator, BaseModel, EmailStr, Field
-
-from app.models.users import Gender
-from app.validators.user_validators import validate_birthday, validate_password, validate_phone_number
+from app.dtos.base import BaseSerializerModel
 
 
-class SignUpRequest(BaseModel):
-    email: Annotated[
-        EmailStr,
-        Field(None, max_length=40),
-    ]
-    password: Annotated[str, Field(min_length=8), AfterValidator(validate_password)]
-    name: Annotated[str, Field(max_length=20)]
-    gender: Gender
-    birth_date: Annotated[date, AfterValidator(validate_birthday)]
-    phone_number: Annotated[str, AfterValidator(validate_phone_number)]
+# ──────────────────────────────────────────────
+# Request DTOs
+# ──────────────────────────────────────────────
+
+class SocialLoginRequest(BaseModel):
+    code: str
 
 
-class LoginRequest(BaseModel):
-    email: EmailStr
-    password: Annotated[str, Field(min_length=8)]
+# ──────────────────────────────────────────────
+# Response DTOs
+# ──────────────────────────────────────────────
+
+class LoginUserResponse(BaseSerializerModel):
+    """로그인 응답에 포함될 사용자 정보"""
+    id: int
+    email: str | None
+    provider: str
+    provider_id: str
+    nickname: str
+    role: str
+    character_stage: int
+    current_point: int
 
 
-class LoginResponse(BaseModel):
+class SocialLoginResponse(BaseModel):
+    """소셜 로그인/회원가입 통합 응답"""
+    is_new_user: bool
+    access_token: str
+    user: LoginUserResponse
+
+
+class TokenRefreshResponse(BaseModel):
     access_token: str
 
 
-class TokenRefreshResponse(LoginResponse): ...
+# ──────────────────────────────────────────────
+# Error Response DTOs (Swagger 문서 표시용)
+# ──────────────────────────────────────────────
+
+class ErrorResponse(BaseModel):
+    """에러 응답 공통 형식"""
+    detail: str

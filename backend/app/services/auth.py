@@ -1,74 +1,95 @@
-from fastapi.exceptions import HTTPException
-from pydantic import EmailStr
-from starlette import status
-from tortoise.transactions import in_transaction
+import logging
+from dataclasses import dataclass
 
-from app.dtos.auth import LoginRequest, SignUpRequest
+from fastapi import HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
+from starlette import status
+
 from app.models.users import User
 from app.repositories.user_repository import UserRepository
+from app.services.google_oauth import GoogleOAuthService, GoogleUserInfo
 from app.services.jwt import JwtService
-from app.utils.common import normalize_phone_number
 from app.utils.jwt.tokens import AccessToken, RefreshToken
-from app.utils.security import hash_password, verify_password
+
+# __name__: 현재 모듈 경로(app.services.auth)를 로거 이름으로 사용
+# 로그 출력 시 어떤 파일에서 발생한 로그인지 자동 식별 가능
+logger = logging.getLogger(__name__)
+
+SUPPORTED_PROVIDERS = {"google"}
+
+
+@dataclass
+class LoginResult:
+    """로그인 처리 결과를 담는 데이터 클래스"""
+    tokens: dict[str, AccessToken | RefreshToken]
+    user: User
+    is_new_user: bool
 
 
 class AuthService:
-    def __init__(self):
-        self.user_repo = UserRepository()
+    def __init__(self, session: AsyncSession):
+        self.user_repo = UserRepository(session)
         self.jwt_service = JwtService()
 
-    async def signup(self, data: SignUpRequest) -> User:
-        # 이메일 중복 체크
-        await self.check_email_exists(data.email)
+    async def social_login(self, provider: str, code: str) -> LoginResult:
+        """
+        소셜 로그인 통합 처리: provider에 따라 분기
+        - 지원하지 않는 provider → 400 Bad Request
+        - 인가 코드 무효 → 400 Bad Request (GoogleOAuthService에서 발생)
+        - Google 서버 오류 → 502 Bad Gateway (GoogleOAuthService에서 발생)
+        - 비활성화된 계정 → 423 Locked
+        """
+        logger.info("소셜 로그인 요청 수신 - provider: %s", provider)
 
-        # 입력받은 휴대폰 번호를 노말라이즈
-        normalized_phone_number = normalize_phone_number(data.phone_number)
-
-        # 휴대폰 번호 중복 체크
-        await self.check_phone_number_exists(normalized_phone_number)
-
-        # 유저 생성
-        async with in_transaction():
-            user = await self.user_repo.create_user(
-                email=data.email,
-                hashed_password=hash_password(data.password),  # 해시화된 비밀번호를 사용
-                name=data.name,
-                phone_number=normalized_phone_number,
-                gender=data.gender,
-                birthday=data.birth_date,
+        if provider not in SUPPORTED_PROVIDERS:
+            logger.warning("지원하지 않는 provider 요청: %s", provider)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"지원하지 않는 로그인 제공자입니다: {provider}",
             )
 
-            return user
+        if provider == "google":
+            return await self._google_login(code)
 
-    async def authenticate(self, data: LoginRequest) -> User:
-        # 이메일로 사용자 조회
-        email = str(data.email)
-        user = await self.user_repo.get_user_by_email(email)
+        # 향후 kakao, naver 등 추가 시 여기에 분기
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"지원하지 않는 로그인 제공자입니다: {provider}",
+        )
+
+    async def _google_login(self, code: str) -> LoginResult:
+        """Google OAuth 인가 코드로 로그인/회원가입 처리"""
+        google_oauth = GoogleOAuthService()
+
+        logger.info("Google 인가 코드 교환 시작")
+        token_data = await google_oauth.exchange_code(code)
+        logger.info("Google 인가 코드 교환 성공")
+
+        google_user: GoogleUserInfo = await google_oauth.get_user_info(token_data["access_token"])
+        logger.info("Google 사용자 정보 조회 성공 - sub: %s, name: %s", google_user.sub, google_user.name)
+
+        user = await self.user_repo.get_user_by_provider_id("google", google_user.sub)
+        is_new_user = False
+
         if not user:
+            is_new_user = True
+            user = await self.user_repo.create_oauth_user(
+                provider="google",
+                provider_id=google_user.sub,
+                nickname=google_user.name[:20],
+                email=google_user.email,
+            )
+            logger.info("신규 사용자 생성 완료 - user_id: %d", user.id)
+        else:
+            logger.info("기존 사용자 로그인 - user_id: %d", user.id)
+
+        if user.is_deleted:
+            logger.warning("비활성화된 계정 로그인 시도 - user_id: %d", user.id)
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail="이메일 또는 비밀번호가 올바르지 않습니다."
+                status_code=status.HTTP_423_LOCKED,
+                detail="비활성화된 계정입니다.",
             )
 
-        # 비밀번호 검증
-        if not verify_password(data.password, user.hashed_password):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail="이메일 또는 비밀번호가 올바르지 않습니다."
-            )
-
-        # 활성 사용자 체크
-        if not user.is_active:
-            raise HTTPException(status_code=status.HTTP_423_LOCKED, detail="비활성화된 계정입니다.")
-
-        return user
-
-    async def login(self, user: User) -> dict[str, AccessToken | RefreshToken]:
-        await self.user_repo.update_last_login(user.id)
-        return self.jwt_service.issue_jwt_pair(user)
-
-    async def check_email_exists(self, email: str | EmailStr) -> None:
-        if await self.user_repo.exists_by_email(email):
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="이미 사용중인 이메일입니다.")
-
-    async def check_phone_number_exists(self, phone_number: str) -> None:
-        if await self.user_repo.exists_by_phone_number(phone_number):
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="이미 사용중인 휴대폰 번호입니다.")
+        tokens = self.jwt_service.issue_jwt_pair(user)
+        logger.info("JWT 토큰 발급 완료 - user_id: %d, is_new_user: %s", user.id, is_new_user)
+        return LoginResult(tokens=tokens, user=user, is_new_user=is_new_user)
