@@ -1,0 +1,98 @@
+name: "🐛 버그 리포트 (Bug Report)"
+description: "버그를 발견했을 때 사용합니다."
+title: "[Bug] "
+labels: ["bug"]
+assignees: []
+
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: "📂 발생 영역"
+      description: "버그가 발생한 영역을 선택해 주세요."
+      options:
+        - Frontend
+        - Backend
+        - AI
+        - Data
+        - Infra
+        - 기타
+    validations:
+      required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: "🚨 심각도"
+      description: "버그의 심각도를 선택해 주세요."
+      options:
+        - "Critical - 서비스 장애 / 데이터 손실"
+        - "High - 핵심 기능 동작 불가"
+        - "Medium - 기능 일부 오작동"
+        - "Low - 사소한 UI/UX 문제"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: "📌 버그 설명"
+      description: "어떤 문제가 발생했는지 간결하게 설명해 주세요."
+      placeholder: |
+        예시: 로그인 후 토큰이 정상 발급되지만, /api/v1/users/me 호출 시 401 에러가 반환됩니다.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: "🔄 재현 방법"
+      description: "버그를 재현할 수 있는 단계를 순서대로 작성해 주세요."
+      placeholder: |
+        1. POST /api/v1/auth/login 으로 로그인
+        2. 응답에서 access_token 확인
+        3. GET /api/v1/users/me 에 Bearer 토큰 포함하여 요청
+        4. 401 Unauthorized 에러 발생
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: "✅ 기대 동작"
+      description: "정상적으로 동작했을 때 예상되는 결과를 작성해 주세요."
+      placeholder: |
+        예시: 200 OK와 함께 사용자 정보가 반환되어야 합니다.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: "❌ 실제 동작"
+      description: "현재 실제로 발생하는 결과를 작성해 주세요."
+      placeholder: |
+        예시: 401 Unauthorized - "토큰이 유효하지 않습니다." 에러 메시지 반환
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: "🖥️ 환경 정보 (선택)"
+      description: "버그가 발생한 환경 정보를 작성해 주세요."
+      placeholder: |
+        - OS: macOS / Ubuntu
+        - Python: 3.13
+        - Docker: 24.x
+        - 브라우저: Chrome 120
+    validations:
+      required: false
+
+  - type: textarea
+    id: screenshot
+    attributes:
+      label: "📸 스크린샷 / 로그 (선택)"
+      description: "에러 스크린샷이나 로그를 첨부해 주세요."
+    validations:
+      required: false

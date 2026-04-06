@@ -1,39 +1,27 @@
-from fastapi import FastAPI
-from tortoise import Tortoise
-from tortoise.contrib.fastapi import register_tortoise
+from collections.abc import AsyncGenerator
+from urllib.parse import quote_plus
+
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core import config
 
-TORTOISE_APP_MODELS = [
-    "aerich.models",
-    "app.models.users",
-]
+# quote_plus: 비밀번호에 @, :, / 등 특수문자가 포함된 경우 URL 인코딩 처리
+# 예) "Password123@!" → "Password123%40%21" (URL에서 안전한 형태로 변환)
+DATABASE_URL = f"mysql+asyncmy://{config.DB_USER}:{quote_plus(config.DB_PASSWORD)}@{config.DB_HOST}:{config.DB_PORT}/{config.DB_NAME}"
 
-TORTOISE_ORM = {
-    "connections": {
-        "default": {
-            "engine": "tortoise.backends.mysql",
-            "dialect": "asyncmy",
-            "credentials": {
-                "host": config.DB_HOST,
-                "port": config.DB_PORT,
-                "user": config.DB_USER,
-                "password": config.DB_PASSWORD,
-                "database": config.DB_NAME,
-                "connect_timeout": config.DB_CONNECT_TIMEOUT,
-                "maxsize": config.DB_CONNECTION_POOL_MAXSIZE,
-            },
-        },
-    },
-    "apps": {
-        "models": {
-            "models": TORTOISE_APP_MODELS,
-        },
-    },
-    "timezone": "Asia/Seoul",
-}
+engine = create_async_engine(
+    DATABASE_URL,
+    pool_size=config.DB_CONNECTION_POOL_MAXSIZE,
+    echo=False,
+)
+
+async_session_factory = async_sessionmaker(
+    bind=engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+)
 
 
-def initialize_tortoise(app: FastAPI) -> None:
-    Tortoise.init_models(TORTOISE_APP_MODELS, "models")
-    register_tortoise(app, config=TORTOISE_ORM)
+async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
+    async with async_session_factory() as session:
+        yield session
