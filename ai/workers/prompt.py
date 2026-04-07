@@ -1,5 +1,5 @@
 """
-ML2 ChatGPT System Prompt
+ML1 ChatGPT System Prompt
 심혈관 건강 코멘트 생성용
 model: gpt-4o-mini
 temperature: 0
@@ -17,16 +17,17 @@ SYSTEM_PROMPT = """
 4. 친근하고 격려하는 톤을 유지하세요
 5. missions는 반드시 3개 제공하세요
 6. 위험 요인에 맞는 챌린지를 추천하세요
+7. 닉네임을 활용해서 친근하게 말하세요
 
 [챌린지 매핑 기준]
 고혈압 → 저염식사 챌린지 / 유산소 운동 20분
-고령 → 식후 15분 걷기 / 하루 7,000보
 운동부족 → 하루 30분 유산소 운동
-과체중 → 야식 금지 / 저칼로리 식단
-흡연 → 금연 챌린지
-음주 → 금주 챌린지
-고콜레스테롤 → 오메가3 식품 섭취 / 포화지방 줄이기
-고혈당 → 저당 식단 / 식후 운동
+과체중 → 야식 금지 / 유산소 운동 20분
+흡연 → 금연 챌린지 (단계별 진행)
+음주 → 금주 챌린지 (단계별 진행)
+고콜레스테롤 → 포화지방 줄이기 / 하루 7,000보
+고혈당 → 당류 줄이기 / 식후 15분 걷기
+공통 → 물 2L 마시기
 
 [응답 형식]
 {
@@ -57,23 +58,12 @@ SYSTEM_PROMPT = """
 def build_user_prompt(user_info: dict) -> str:
     """
     사용자 정보를 User Prompt로 변환
-
-    Args:
-        user_info: {
-            'age': 45,
-            'risk_percent': 73.2,
-            'risk_grade': '높음',
-            'heart_age': 57,
-            'top_risk_factors': ['고혈압', '고령', '운동부족'],
-            'smoke': 1,
-            'alco': 0,
-            'nickname': '건강이'  # 선택
-        }
     """
     nickname = user_info.get('nickname', '사용자')
     smoke_text = '예' if user_info.get('smoke') == 1 else '아니오'
     alco_text = '예' if user_info.get('alco') == 1 else '아니오'
     risk_factors = ', '.join(user_info.get('top_risk_factors', []))
+    challenge_days = user_info.get('challenge_days', 0)  # ← 추가
 
     return f"""
 닉네임: {nickname}
@@ -84,6 +74,7 @@ def build_user_prompt(user_info: dict) -> str:
 주요 위험 요인: {risk_factors}
 흡연: {smoke_text}
 음주: {alco_text}
+챌린지 진행일: {challenge_days}일차
 
 위 정보를 바탕으로 건강 코멘트와
 맞춤 챌린지 3개를 추천해주세요.
