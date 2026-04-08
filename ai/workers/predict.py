@@ -39,6 +39,13 @@ FACTOR_MAP = {
     'gender': '성별',
     'pulse_pressure': '고혈압',
     'risk_class': '복합위험군',
+    'bp_ratio': '고혈압',           # 추가
+    'age_hypertension': '고령+고혈압',  # 추가
+    'age_cholesterol': '고령+고콜레스테롤',  # 추가
+    'age_ap_hi': '고혈압',          # 추가
+    'smoke_alco': '흡연+음주',      # 추가
+    'age_active': '운동부족',       # 추가
+    'bp_bmi': '비만+고혈압',        # 추가
 }
 
 # 챌린지 달성 시 보정값 (의학 문헌 기반)
@@ -78,22 +85,32 @@ def preprocess(user_data: dict) -> pd.DataFrame:
     # 복합 위험군 클래스 생성
     df['hypertension'] = (df['ap_hi'] >= 140).astype(int)
     df['high_cholesterol'] = (df['cholesterol'] >= 2).astype(int)
-    df['obesity'] = (df['bmi'] >= 30).astype(int)
     df['risk_class'] = (
         df['hypertension'] +
         df['high_cholesterol'] +
-        df['obesity'] +
+        (df['bmi'] >= 30).astype(int) +
         df['smoke'] +
         df['alco']
     )
+
+    # 추가 파생변수
+    df['bp_ratio']         = df['ap_hi'] / df['ap_lo']
+    df['age_hypertension'] = df['age'] * df['hypertension']
+    df['age_cholesterol']  = df['age'] * df['cholesterol']
+    df['age_ap_hi']        = df['age'] * df['ap_hi']
+    df['smoke_alco']       = df['smoke'] * df['alco']
+    df['age_active']       = df['age'] * (1 - df['active'])
+    df['bp_bmi']           = df['ap_hi'] * df['bmi']
 
     # 모델 학습 피처 순서에 맞게 정렬 (18개)
     feature_cols = [
         'age', 'gender', 'height', 'weight',
         'ap_hi', 'ap_lo', 'cholesterol', 'gluc',
         'smoke', 'alco', 'active', 'bmi',
-        'hypertension', 'high_cholesterol', 'obesity',
-        'risk_class', 'pulse_pressure', 'age_bmi'
+        'hypertension', 'high_cholesterol', 'risk_class',
+        'pulse_pressure', 'smoke_alco', 'age_active', 'bp_bmi',
+        'bp_ratio', 'age_hypertension', 'age_cholesterol',
+        'age_ap_hi', 'age_bmi'
     ]
     df = df[feature_cols]
 
