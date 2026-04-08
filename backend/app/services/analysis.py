@@ -17,8 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
 from app.core.config import Config
-from app.dtos.analysis import AnalysisResultResponse, AnalysisTaskResponse, HealthAnalysisRequest
-from app.dtos.health import HealthRecordCreateRequest
+from app.dtos.analysis import AnalysisResultResponse, AnalysisTaskResponse
 from app.models.health import HealthRecord
 from app.models.users import User
 from app.repositories.health_repository import HealthRecordRepository
@@ -41,37 +40,33 @@ class HealthAnalysisService:
         self.repo = HealthRecordRepository(session)
         self.redis = redis
 
-    async def request_analysis(
-        self, request: HealthAnalysisRequest, user: User
-    ) -> AnalysisResultResponse | AnalysisTaskResponse:
+    async def request_analysis(self, record_id: int, user: User) -> AnalysisResultResponse | AnalysisTaskResponse:
         """
         AI 건강 분석 요청 처리.
-        1. record_id → DB 조회 / health_data → 직접 사용
+        1. record_id로 DB에서 건강검진 기록 조회 + 소유권 검증
         2. 데이터를 ml1_run 입력 형식으로 변환
         3. Redis 캐시 확인 (hit → 즉시 반환)
         4. 캐시 miss → Celery task 제출 → task_id 반환
         """
-        # 1. 건강검진 데이터 획득
-        if request.record_id is not None:
-            record = await self.repo.get_record(request.record_id)
-            if not record:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="해당 건강검진 기록을 찾을 수 없습니다.",
-                )
-            if record.user_id != user.id:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="본인의 건강검진 기록만 분석할 수 있습니다.",
-                )
-            user_data = self._convert_record_to_ml1_input(record, user)
-        else:
-            user_data = self._convert_dto_to_ml1_input(request.health_data, user)
+        # 1. 건강검진 기록 조회 + 소유권 검증
+        record = await self.repo.get_record(record_id)
+        if not record:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="해당 건강검진 기록을 찾을 수 없습니다.",
+            )
+        if record.user_id != user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="본인의 건강검진 기록만 분석할 수 있습니다.",
+            )
 
+        # 2. ml1_run 입력 형식으로 변환
+        user_data = self._convert_record_to_ml1_input(record, user)
         nickname = user.nickname
         challenge_days = 0  # 기본값 (추후 챌린지 진행일 연동 가능)
 
-        # 2. Redis 캐시 확인
+        # 3. Redis 캐시 확인
         cache_key = self._build_cache_key(user_data, nickname, challenge_days)
         cached = await self.redis.get(cache_key)
         if cached:
@@ -81,7 +76,7 @@ class HealthAnalysisService:
                 data=json.loads(cached),
             )
 
-        # 3. Celery task 제출 (이름 기반 호출, AI 모듈 import 불필요)
+        # 4. Celery task 제출 (이름 기반 호출, AI 모듈 import 불필요)
         task = celery_app.send_task(
             "ml1.analyze_health",
             args=[user_data, nickname, challenge_days],
@@ -190,23 +185,6 @@ class HealthAnalysisService:
             "smoke": int(record.smoke_yn),
             "alco": int(record.alcohol_yn),
             "active": int(record.exercise_yn),
-        }
-
-    def _convert_dto_to_ml1_input(self, dto: HealthRecordCreateRequest, user: User) -> dict:
-        """HealthRecordCreateRequest DTO → ml1_run 입력 dict 변환"""
-        self._validate_user_profile(user)
-        return {
-            "age": user.age,
-            "gender": self._convert_gender(user.gender),
-            "height": dto.height,
-            "weight": dto.weight,
-            "ap_hi": dto.systolic_bp,
-            "ap_lo": dto.diastolic_bp,
-            "cholesterol": self._convert_cholesterol(dto.total_cholesterol),
-            "gluc": self._convert_glucose(dto.glucose),
-            "smoke": int(dto.smoke_yn),
-            "alco": int(dto.alcohol_yn),
-            "active": int(dto.exercise_yn),
         }
 
     @staticmethod
