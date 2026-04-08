@@ -8,12 +8,15 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 # 2. 의존성 패키지 관리 파일을 컨테이너 내부에 복사합니다.
 COPY pyproject.toml uv.lock ./
 
-# 3. pyproject.toml에 명시된 의존성 패키지 중에서 'app' 그룹만 설치합니다.
+# 3. pyproject.toml에 명시된 의존성 패키지 중에서 'ai' 그룹만 설치합니다.
 RUN uv sync --group ai --no-dev --frozen
 
 # 4. 로컬 소스 코드를 컨테이너 내부로 복사합니다.
-COPY ./ai ./app
+COPY ./ai ./ai
 
-# 5. 해당 이미지를 활용하여 도커컨테이너 실행시 실행되는 명령어입니다.
-# 아래 커맨드를 수정한 뒤에 사용합니다.
-CMD ["sleep", "infinity"]
+# 5. 모델 파일 경로 환경변수 설정 (Docker 내 경로)
+ENV ML1_MODEL_PATH=/app/ai/models/xgboost_model.pkl
+ENV ML1_SCALER_PATH=/app/ai/models/scaler.pkl
+
+# 6. Celery Worker 실행
+CMD ["uv", "run", "celery", "-A", "ai.celery_app", "worker", "--loglevel=info"]

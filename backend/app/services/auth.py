@@ -90,6 +90,6 @@ class AuthService:
                 detail="비활성화된 계정입니다.",
             )
 
-        tokens = self.jwt_service.issue_jwt_pair(user)
+        tokens = self.jwt_service.issue_jwt_pair(user) # token 발급되는 곳
         logger.info("JWT 토큰 발급 완료 - user_id: %d, is_new_user: %s", user.id, is_new_user)
         return LoginResult(tokens=tokens, user=user, is_new_user=is_new_user)

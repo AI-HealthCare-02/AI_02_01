@@ -2,13 +2,13 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, status
 from fastapi.responses import ORJSONResponse as Response
-
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.databases import get_db_session
 from app.dependencies.security import get_request_user
 from app.dtos.users import (
     DashboardResponse,
+    InitialProfileRequest,
     ProfileUpdateRequest,
     UserInfoResponse,
     WithdrawResponse,
@@ -20,21 +20,49 @@ from app.services.users import UserManageService
 user_router = APIRouter(prefix="/users", tags=["users"])
 
 
+@user_router.put(
+    "/profile/initial",
+    response_model=UserInfoResponse,
+    status_code=status.HTTP_200_OK,
+    summary="초기 프로필 설정",
+    description=(
+        "Google 로그인 직후 성별과 출생 연도를 입력한다. "
+        "나이는 서버에서 자동 계산되며, 성별은 최초 1회만 설정 가능하다."
+    ),
+    responses={
+        409: {"description": "이미 초기 프로필이 설정된 사용자"},
+    },
+)
+async def setup_initial_profile(
+    data: InitialProfileRequest,  # 요청 body에서 gender, birth_year를 받음
+    user: Annotated[User, Depends(get_request_user)],  # JWT 토큰으로 현재 로그인 사용자 확인
+    session: Annotated[AsyncSession, Depends(get_db_session)],  # DB 세션 자동 주입
+) -> Response:
+    service = UserManageService(session)
+    updated_user = await service.setup_initial_profile(user=user, data=data)
+    return Response(
+        UserInfoResponse.model_validate(updated_user).model_dump(),
+        status_code=status.HTTP_200_OK,
+    )
+
+
 @user_router.patch(
     "/profile",
     response_model=UserInfoResponse,
     status_code=status.HTTP_200_OK,
     summary="프로필 수정",
-    description="로그인한 사용자의 닉네임 및 프로필 이미지를 수정한다. 수정 즉시 전체 화면에 반영된다.",
+    description=(
+        "로그인한 사용자의 닉네임, 프로필 이미지, 출생 연도를 수정한다. "
+        "출생 연도 변경 시 나이가 자동 재계산된다. 성별은 수정할 수 없다."
+    ),
 )
 async def update_profile(
     update_data: ProfileUpdateRequest,  # 요청 body에서 수정할 데이터를 받음
     user: Annotated[User, Depends(get_request_user)],  # JWT 토큰으로 현재 로그인 사용자 확인
     session: Annotated[AsyncSession, Depends(get_db_session)],  # DB 세션 자동 주입
 ) -> Response:
-    user_manage_service = UserManageService(session)
-    updated_user = await user_manage_service.update_profile(user=user, data=update_data)
-    # model_validate: SQLAlchemy 모델 → Pydantic 응답 DTO로 변환
+    service = UserManageService(session)
+    updated_user = await service.update_profile(user=user, data=update_data)
     return Response(
         UserInfoResponse.model_validate(updated_user).model_dump(),
         status_code=status.HTTP_200_OK,
@@ -52,8 +80,8 @@ async def withdraw_user(
     user: Annotated[User, Depends(get_request_user)],  # 탈퇴할 사용자 본인 확인
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> Response:
-    user_manage_service = UserManageService(session)
-    await user_manage_service.withdraw_user(user)
+    service = UserManageService(session)
+    await service.withdraw_user(user)
     return Response(
         WithdrawResponse(message="회원 탈퇴가 완료되었습니다.").model_dump(),
         status_code=status.HTTP_200_OK,
@@ -71,8 +99,8 @@ async def get_dashboard(
     user: Annotated[User, Depends(get_request_user)],  # 로그인 사용자 확인
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> Response:
-    user_manage_service = UserManageService(session)
-    dashboard = await user_manage_service.get_dashboard(user)
+    service = UserManageService(session)
+    dashboard = await service.get_dashboard(user)
     return Response(
         dashboard.model_dump(),
         status_code=status.HTTP_200_OK,

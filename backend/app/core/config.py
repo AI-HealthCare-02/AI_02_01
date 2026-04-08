@@ -33,10 +33,16 @@ class Config(BaseSettings):
     COOKIE_DOMAIN: str = "localhost"
 
     JWT_ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 30 # 30 days
     REFRESH_TOKEN_EXPIRE_MINUTES: int = 14 * 24 * 60
     JWT_LEEWAY: int = 5
-    
+
+    # Redis 설정 (DB 1번 사용, Celery broker는 DB 0번)
+    REDIS_URL: str = "redis://localhost:6379/1"
+
+    # CORS 허용 도메인 (쉼표 구분 문자열)
+    CORS_ORIGINS: str = "http://localhost:5173,https://frontend-one-omega-59.vercel.app"
+
     GOOGLE_CLIENT_ID: str
     GOOGLE_CLIENT_SECRET: str
     GOOGLE_REDIRECT_URI: str
