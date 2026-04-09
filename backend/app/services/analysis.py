@@ -26,8 +26,10 @@ logger = logging.getLogger(__name__)
 
 # Backend에서 Celery task를 이름 기반으로 호출 (AI 의존성 불필요)
 config = Config()
-_celery_broker_url = config.REDIS_URL.rsplit("/", 1)[0] + "/0"
-celery_app = Celery(broker=_celery_broker_url, backend=_celery_broker_url)
+celery_app = Celery(
+    broker=config.CELERY_BROKER_URL,  # DB 0: task 대기열
+    backend=config.CELERY_BACKEND_URL,  # DB 1: task 완료 결과 저장
+)
 
 # 캐시 TTL: 24시간
 CACHE_TTL = 86400
@@ -66,7 +68,7 @@ class HealthAnalysisService:
         nickname = user.nickname
         challenge_days = 0  # 기본값 (추후 챌린지 진행일 연동 가능)
 
-        # 3. Redis 캐시 확인
+        # 3. Redis 캐시 확인 (DB 2)
         cache_key = self._build_cache_key(user_data, nickname, challenge_days)
         cached = await self.redis.get(cache_key)
         if cached:
@@ -87,7 +89,7 @@ class HealthAnalysisService:
 
     async def get_analysis_result(self, task_id: str) -> AnalysisResultResponse:
         """
-        Celery task 결과 조회.
+        Celery task 결과 조회 (DB 1에서 조회).
         - PENDING: 아직 처리 중
         - SUCCESS: 완료, 결과 반환
         - FAILURE: 실패, 에러 메시지 반환
@@ -99,23 +101,16 @@ class HealthAnalysisService:
 
         if result.state == "SUCCESS":
             task_result = result.result
-            # Celery task가 {"status": "success", "data": {...}} 형식으로 반환
             if isinstance(task_result, dict) and task_result.get("status") == "success":
                 return AnalysisResultResponse(
                     status="success",
                     data=task_result.get("data"),
                 )
-            return AnalysisResultResponse(
-                status="success",
-                data=task_result,
-            )
+            return AnalysisResultResponse(status="success", data=task_result)
 
         if result.state == "FAILURE":
             logger.error("ML1 분석 실패 - task_id: %s, error: %s", task_id, result.info)
-            return AnalysisResultResponse(
-                status="failed",
-                error=str(result.info),
-            )
+            return AnalysisResultResponse(status="failed", error=str(result.info))
 
         # RETRY, STARTED 등 기타 상태
         return AnalysisResultResponse(status="pending")

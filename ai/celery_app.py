@@ -2,7 +2,11 @@
 Celery 통합 설정 파일
 
 역할: Vision + ML1 Worker가 공통으로 사용하는 Celery 인스턴스
-브로커: Redis (Docker 네트워크 내 redis://redis:6379/0)
+
+Redis DB 할당:
+  DB 0 - Celery Broker  : task 대기열 (FastAPI → Redis → Worker)
+  DB 1 - Celery Backend : task 완료 결과 저장 (Worker → Redis → FastAPI)
+  DB 2 - ML1 Cache      : 분석 결과 캐시 (24시간 TTL)
 """
 
 import os
@@ -13,17 +17,18 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ──────────────────────────────────────────────
-# Redis 연결
+# Redis 연결 (DB 분리)
 # ──────────────────────────────────────────────
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
+BACKEND_URL = os.getenv("CELERY_BACKEND_URL", "redis://localhost:6379/1")
 
 # ──────────────────────────────────────────────
 # Celery 인스턴스 생성
 # ──────────────────────────────────────────────
 celery_app = Celery(
     "ai_worker",
-    broker=REDIS_URL,
-    backend=REDIS_URL,
+    broker=BROKER_URL,    # DB 0: task 대기열
+    backend=BACKEND_URL,  # DB 1: task 완료 결과 저장
 )
 
 # ──────────────────────────────────────────────
