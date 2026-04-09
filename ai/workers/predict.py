@@ -4,7 +4,10 @@ ML1: XGBoost + SHAP
 """
 
 import os
-
+import joblib
+import numpy as np
+import pandas as pd
+import shap
 
 MODEL_PATH = os.getenv('ML1_MODEL_PATH', 'ai/models/xgboost_model.pkl')
 SCALER_PATH = os.getenv('ML1_SCALER_PATH', 'ai/models/scaler.pkl')
