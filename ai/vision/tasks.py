@@ -1,0 +1,225 @@
+"""
+Vision API Celery Tasks (v2 — 피드백 반영)
+
+개선사항:
+1. 입력 검증 에러 vs API 에러 분리 → 잘못된 입력은 retry 안 함
+2. 공통 실행 로직(_run_vision_task)으로 묶기
+3. 성공/실패 반환 형식 통일
+4. 로그 정리
+"""
+
+import asyncio
+import base64
+import logging
+
+from ai.celery_app import celery_app
+from .meal_service import MealService
+from .exercise_service import ExerciseService
+from .client import ALLOWED_MEDIA_TYPES
+
+logger = logging.getLogger(__name__)
+
+# ──────────────────────────────────────────────
+# 서비스 인스턴스 (Worker 프로세스당 1개)
+# ──────────────────────────────────────────────
+meal_service = MealService()
+exercise_service = ExerciseService()
+
+
+# ══════════════════════════════════════════════
+# 1. 입력 검증 (실패 시 retry 안 함)
+# ══════════════════════════════════════════════
+# 비유: 주문서 주소가 틀리면 배달을 100번 보내도 소용없음
+#       → 바로 "주소 확인해주세요" 반환
+
+class InvalidInputError(Exception):
+    """재시도해도 해결 안 되는 입력 오류"""
+    pass
+
+
+def validate_input(image_base64: str, media_type: str) -> bytes:
+    """
+    입력 검증 + base64 디코딩
+
+    검증 통과 → image_bytes 반환
+    검증 실패 → InvalidInputError 발생 (retry 안 함)
+    """
+    # 1) media_type 검증
+    if media_type not in ALLOWED_MEDIA_TYPES:
+        raise InvalidInputError(
+            f"지원하지 않는 이미지 형식: {media_type}. "
+            f"지원 형식: {', '.join(ALLOWED_MEDIA_TYPES)}"
+        )
+
+    # 2) base64 문자열 검증
+    if not image_base64 or not isinstance(image_base64, str):
+        raise InvalidInputError("이미지 데이터가 비어있거나 형식이 잘못되었습니다.")
+
+    # 3) base64 디코딩
+    try:
+        image_bytes = base64.b64decode(image_base64)
+    except Exception:
+        raise InvalidInputError("base64 디코딩 실패 — 이미지 데이터가 손상되었습니다.")
+
+    # 4) 디코딩된 데이터 크기 검증
+    if len(image_bytes) == 0:
+        raise InvalidInputError("이미지 데이터가 비어있습니다.")
+
+    return image_bytes
+
+
+# ══════════════════════════════════════════════
+# 2. 통일된 반환 형식
+# ══════════════════════════════════════════════
+# 성공이든 실패든 같은 구조로 반환
+# → FastAPI에서 분기 처리가 깔끔해짐
+
+def success_response(task_name: str, task_id: str, result: dict) -> dict:
+    """성공 응답 형식"""
+    return {
+        "status": "success",
+        "task_name": task_name,
+        "task_id": task_id,
+        "data": result,         # {"result": {...}, "usage": {...}}
+        "error": None,
+    }
+
+
+def fail_response(task_name: str, task_id: str, error_message: str) -> dict:
+    """실패 응답 형식"""
+    return {
+        "status": "failed",
+        "task_name": task_name,
+        "task_id": task_id,
+        "data": None,
+        "error": error_message,
+    }
+
+
+# ══════════════════════════════════════════════
+# 3. 공통 실행 로직
+# ══════════════════════════════════════════════
+# 세 task 모두 같은 패턴:
+#   입력 검증 → 서비스 호출 → 결과 반환
+# 이걸 하나로 묶어서 중복 제거
+
+def _run_vision_task(self, task_name: str, image_base64: str, media_type: str, service_call):
+    """
+    공통 task 실행 함수
+
+    Args:
+        self: Celery task 인스턴스 (bind=True)
+        task_name: 작업 이름 (로그용)
+        image_base64: 이미지 base64 문자열
+        media_type: MIME 타입
+        service_call: 실행할 함수 (lambda로 전달)
+                      예: lambda bytes: meal_service.analyze_free(bytes, media_type)
+
+    Returns:
+        dict: 통일된 응답 형식 (success_response 또는 fail_response)
+    """
+    task_id = self.request.id
+    logger.info(f"[{task_name}] 시작 | task_id={task_id}")
+
+    # ── Step 1: 입력 검증 (실패 시 retry 안 함) ──
+    try:
+        image_bytes = validate_input(image_base64, media_type)
+    except InvalidInputError as e:
+        logger.warning(f"[{task_name}] 입력 오류 (retry 안 함) | task_id={task_id} | {e}")
+        return fail_response(task_name, task_id, str(e))
+
+    # ── Step 2: 서비스 호출 (실패 시 retry 함) ──
+    try:
+        result = asyncio.run(service_call(image_bytes))
+        logger.info(f"[{task_name}] 완료 | task_id={task_id}")
+        return success_response(task_name, task_id, result)
+
+    except Exception as exc:
+        logger.error(f"[{task_name}] API 오류 (retry 시도) | task_id={task_id} | {exc}")
+        raise self.retry(exc=exc)
+
+
+# ══════════════════════════════════════════════
+# 4. Task 정의
+# ══════════════════════════════════════════════
+
+# ── Task 1: 식단 무료 분석 ──
+@celery_app.task(
+    name="vision.analyze_meal_free",
+    bind=True,
+    max_retries=2,
+    default_retry_delay=5,
+)
+def analyze_meal_free(self, image_base64: str, media_type: str, risk_factors: str = ""):
+    """
+    식단 무료 분석 (+100pt)
+
+    FastAPI에서 호출:
+        from ai.vision.tasks import analyze_meal_free
+        task = analyze_meal_free.delay(image_base64, media_type, risk_factors)
+        result = task.get()  # 또는 task.id로 상태 조회
+    """
+    return _run_vision_task(
+        self=self,
+        task_name="식단_무료_분석",
+        image_base64=image_base64,
+        media_type=media_type,
+        service_call=lambda img_bytes: meal_service.analyze_free(
+            image_bytes=img_bytes,
+            media_type=media_type,
+            risk_factors=risk_factors,
+        ),
+    )
+
+
+# ── Task 2: 식단 유료 상세 리포트 ──
+@celery_app.task(
+    name="vision.analyze_meal_paid",
+    bind=True,
+    max_retries=2,
+    default_retry_delay=5,
+)
+def analyze_meal_paid(self, image_base64: str, media_type: str, risk_factors: str = ""):
+    """
+    식단 유료 상세 리포트 (-300pt)
+
+    FastAPI에서 호출:
+        task = analyze_meal_paid.delay(image_base64, media_type, risk_factors)
+    """
+    return _run_vision_task(
+        self=self,
+        task_name="식단_유료_분석",
+        image_base64=image_base64,
+        media_type=media_type,
+        service_call=lambda img_bytes: meal_service.analyze_paid(
+            image_bytes=img_bytes,
+            media_type=media_type,
+            risk_factors=risk_factors,
+        ),
+    )
+
+
+# ── Task 3: 운동 캡처 인증 ──
+@celery_app.task(
+    name="vision.analyze_exercise",
+    bind=True,
+    max_retries=2,
+    default_retry_delay=5,
+)
+def analyze_exercise(self, image_base64: str, media_type: str):
+    """
+    운동 앱 스크린샷 인증 (+100pt)
+
+    FastAPI에서 호출:
+        task = analyze_exercise.delay(image_base64, media_type)
+    """
+    return _run_vision_task(
+        self=self,
+        task_name="운동_캡처_인증",
+        image_base64=image_base64,
+        media_type=media_type,
+        service_call=lambda img_bytes: exercise_service.analyze(
+            image_bytes=img_bytes,
+            media_type=media_type,
+        ),
+    )
