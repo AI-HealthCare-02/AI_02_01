@@ -4,15 +4,14 @@ ML1: XGBoost + SHAP
 """
 
 import os
-
 import joblib
 import numpy as np
 import pandas as pd
 import shap
 
-# ── 모델 로드 (Docker 내: /app/models/, 로컬: ai/models/)
-MODEL_PATH = os.environ.get("ML1_MODEL_PATH", "ai/models/xgboost_model.pkl")
-SCALER_PATH = os.environ.get("ML1_SCALER_PATH", "ai/models/scaler.pkl")
+MODEL_PATH = os.getenv('ML1_MODEL_PATH', 'ai/models/xgboost_model.pkl')
+SCALER_PATH = os.getenv('ML1_SCALER_PATH', 'ai/models/scaler.pkl')
+
 
 model = joblib.load(MODEL_PATH)
 scaler = joblib.load(SCALER_PATH)
