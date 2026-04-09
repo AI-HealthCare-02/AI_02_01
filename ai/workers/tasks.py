@@ -16,7 +16,7 @@ from ai.workers.worker import ml1_run
 logger = logging.getLogger(__name__)
 
 # ──────────────────────────────────────────────
-# Redis 캐시 클라이언트 (DB 1번, Backend 캐시와 동일)
+# Redis 캐시 클라이언트 (DB 2번 - ML1 분석 결과 캐시 전용)
 # ──────────────────────────────────────────────
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 # DB 1번으로 변경하여 Celery broker(DB 0번)와 분리
