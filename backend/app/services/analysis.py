@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
 from app.core.config import Config
-from app.dtos.analysis import AnalysisResultResponse, AnalysisTaskResponse
+from app.dtos.analysis import AnalysisResultResponse, AnalysisTaskResponse, GuestAnalysisRequest
 from app.models.health import HealthRecord
 from app.models.users import User
 from app.repositories.health_repository import HealthRecordRepository
@@ -84,6 +84,47 @@ class HealthAnalysisService:
             args=[user_data, nickname, challenge_days],
         )
         logger.info("ML1 분석 task 제출 - user_id: %d, task_id: %s", user.id, task.id)
+
+        return AnalysisTaskResponse(task_id=task.id, status="pending")
+
+    async def request_guest_analysis(self, data: GuestAnalysisRequest) -> AnalysisResultResponse | AnalysisTaskResponse:
+        """
+        비회원 AI 건강 분석 요청 처리.
+        DB 건강검진 기록 없이 요청 body의 수치를 직접 ML1 입력 형식으로 변환한다.
+        1. 요청 수치를 ml1_run 입력 형식으로 변환
+        2. Redis 캐시 확인 (hit → 즉시 반환)
+        3. 캐시 miss → Celery task 제출 → task_id 반환
+        """
+        # 1. 요청 수치 → ml1_run 입력 형식 변환
+        user_data = {
+            "age": data.age,
+            "gender": self._convert_gender(data.gender),
+            "height": data.height,
+            "weight": data.weight,
+            "ap_hi": data.systolic_bp,
+            "ap_lo": data.diastolic_bp,
+            "cholesterol": self._convert_cholesterol(data.total_cholesterol),
+            "gluc": self._convert_glucose(data.glucose),
+            "smoke": int(data.smoke_yn),
+            "alco": int(data.alcohol_yn),
+            "active": int(data.exercise_yn),
+        }
+        nickname = "게스트"
+        challenge_days = 0
+
+        # 2. Redis 캐시 확인 (DB 2)
+        cache_key = self._build_cache_key(user_data, nickname, challenge_days)
+        cached = await self.redis.get(cache_key)
+        if cached:
+            logger.info("ML1 캐시 히트 (비회원) - key: %s", cache_key)
+            return AnalysisResultResponse(status="success", data=json.loads(cached))
+
+        # 3. Celery task 제출 (이름 기반 호출, AI 모듈 import 불필요)
+        task = celery_app.send_task(
+            "ml1.analyze_health",
+            args=[user_data, nickname, challenge_days],
+        )
+        logger.info("ML1 분석 task 제출 (비회원) - task_id: %s", task.id)
 
         return AnalysisTaskResponse(task_id=task.id, status="pending")
 
