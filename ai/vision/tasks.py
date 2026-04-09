@@ -12,7 +12,7 @@ import asyncio
 import base64
 import logging
 
-from .celery_app import celery_app
+from ai.celery_app import celery_app
 from .meal_service import MealService
 from .exercise_service import ExerciseService
 from .client import ALLOWED_MEDIA_TYPES
