@@ -2,7 +2,10 @@
 Redis 비동기 클라이언트 모듈
 
 역할: ML1 분석 결과 캐싱용 Redis 연결 관리
-DB 분리: DB 1번 (Celery broker는 DB 0번 사용)
+DB 할당:
+  DB 0 - Celery Broker  (task 대기열)
+  DB 1 - Celery Backend (task 완료 결과)
+  DB 2 - ML1 Cache      (이 모듈에서 사용, 24시간 TTL)
 """
 
 import logging
@@ -23,10 +26,10 @@ async def init_redis() -> None:
     """Redis 연결 초기화 (서버 시작 시 호출)"""
     global _redis_client
     _redis_client = aioredis.from_url(
-        config.REDIS_URL,
+        config.REDIS_CACHE_URL,
         decode_responses=True,
     )
-    logger.info("Redis 연결 초기화 완료 - %s", config.REDIS_URL)
+    logger.info("Redis 캐시 연결 초기화 완료 - %s", config.REDIS_CACHE_URL)
 
 
 async def close_redis() -> None:
@@ -35,7 +38,7 @@ async def close_redis() -> None:
     if _redis_client is not None:
         await _redis_client.aclose()
         _redis_client = None
-        logger.info("Redis 연결 해제 완료")
+        logger.info("Redis 캐시 연결 해제 완료")
 
 
 def get_redis() -> aioredis.Redis:

@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
 from app.core.config import Config
-from app.dtos.analysis import AnalysisResultResponse, AnalysisTaskResponse
+from app.dtos.analysis import AnalysisResultResponse, AnalysisTaskResponse, GuestAnalysisRequest
 from app.models.health import HealthRecord
 from app.models.users import User
 from app.repositories.health_repository import HealthRecordRepository
@@ -26,8 +26,10 @@ logger = logging.getLogger(__name__)
 
 # Backend에서 Celery task를 이름 기반으로 호출 (AI 의존성 불필요)
 config = Config()
-_celery_broker_url = config.REDIS_URL.rsplit("/", 1)[0] + "/0"
-celery_app = Celery(broker=_celery_broker_url, backend=_celery_broker_url)
+celery_app = Celery(
+    broker=config.CELERY_BROKER_URL,  # DB 0: task 대기열
+    backend=config.CELERY_BACKEND_URL,  # DB 1: task 완료 결과 저장
+)
 
 # 캐시 TTL: 24시간
 CACHE_TTL = 86400
@@ -66,7 +68,7 @@ class HealthAnalysisService:
         nickname = user.nickname
         challenge_days = 0  # 기본값 (추후 챌린지 진행일 연동 가능)
 
-        # 3. Redis 캐시 확인
+        # 3. Redis 캐시 확인 (DB 2)
         cache_key = self._build_cache_key(user_data, nickname, challenge_days)
         cached = await self.redis.get(cache_key)
         if cached:
@@ -85,9 +87,50 @@ class HealthAnalysisService:
 
         return AnalysisTaskResponse(task_id=task.id, status="pending")
 
+    async def request_guest_analysis(self, data: GuestAnalysisRequest) -> AnalysisResultResponse | AnalysisTaskResponse:
+        """
+        비회원 AI 건강 분석 요청 처리.
+        DB 건강검진 기록 없이 요청 body의 수치를 직접 ML1 입력 형식으로 변환한다.
+        1. 요청 수치를 ml1_run 입력 형식으로 변환
+        2. Redis 캐시 확인 (hit → 즉시 반환)
+        3. 캐시 miss → Celery task 제출 → task_id 반환
+        """
+        # 1. 요청 수치 → ml1_run 입력 형식 변환
+        user_data = {
+            "age": data.age,
+            "gender": self._convert_gender(data.gender),
+            "height": data.height,
+            "weight": data.weight,
+            "ap_hi": data.systolic_bp,
+            "ap_lo": data.diastolic_bp,
+            "cholesterol": self._convert_cholesterol(data.total_cholesterol),
+            "gluc": self._convert_glucose(data.glucose),
+            "smoke": int(data.smoke_yn),
+            "alco": int(data.alcohol_yn),
+            "active": int(data.exercise_yn),
+        }
+        nickname = "게스트"
+        challenge_days = 0
+
+        # 2. Redis 캐시 확인 (DB 2)
+        cache_key = self._build_cache_key(user_data, nickname, challenge_days)
+        cached = await self.redis.get(cache_key)
+        if cached:
+            logger.info("ML1 캐시 히트 (비회원) - key: %s", cache_key)
+            return AnalysisResultResponse(status="success", data=json.loads(cached))
+
+        # 3. Celery task 제출 (이름 기반 호출, AI 모듈 import 불필요)
+        task = celery_app.send_task(
+            "ml1.analyze_health",
+            args=[user_data, nickname, challenge_days],
+        )
+        logger.info("ML1 분석 task 제출 (비회원) - task_id: %s", task.id)
+
+        return AnalysisTaskResponse(task_id=task.id, status="pending")
+
     async def get_analysis_result(self, task_id: str) -> AnalysisResultResponse:
         """
-        Celery task 결과 조회.
+        Celery task 결과 조회 (DB 1에서 조회).
         - PENDING: 아직 처리 중
         - SUCCESS: 완료, 결과 반환
         - FAILURE: 실패, 에러 메시지 반환
@@ -99,23 +142,16 @@ class HealthAnalysisService:
 
         if result.state == "SUCCESS":
             task_result = result.result
-            # Celery task가 {"status": "success", "data": {...}} 형식으로 반환
             if isinstance(task_result, dict) and task_result.get("status") == "success":
                 return AnalysisResultResponse(
                     status="success",
                     data=task_result.get("data"),
                 )
-            return AnalysisResultResponse(
-                status="success",
-                data=task_result,
-            )
+            return AnalysisResultResponse(status="success", data=task_result)
 
         if result.state == "FAILURE":
             logger.error("ML1 분석 실패 - task_id: %s, error: %s", task_id, result.info)
-            return AnalysisResultResponse(
-                status="failed",
-                error=str(result.info),
-            )
+            return AnalysisResultResponse(status="failed", error=str(result.info))
 
         # RETRY, STARTED 등 기타 상태
         return AnalysisResultResponse(status="pending")
