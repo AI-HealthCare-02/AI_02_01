@@ -8,12 +8,33 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.redis import get_redis
 from app.db.databases import get_db_session
 from app.dependencies.security import get_request_user
-from app.dtos.analysis import AnalysisResultResponse, AnalysisTaskResponse
+from app.dtos.analysis import AnalysisResultResponse, AnalysisTaskResponse, GuestAnalysisRequest
 from app.models.users import User
 from app.services.analysis import HealthAnalysisService
 
 # /api/v1/health/analysis 경로의 라우터. AI 건강 분석 API를 담당한다.
 analysis_router = APIRouter(prefix="/health/analysis", tags=["analysis"])
+
+
+@analysis_router.post(
+    "/guest",
+    response_model=AnalysisTaskResponse | AnalysisResultResponse,
+    status_code=status.HTTP_200_OK,
+    summary="비회원 AI 건강 분석 요청",
+    description=(
+        "로그인 없이 건강 수치를 직접 입력하여 심혈관 위험도 예측 및 건강 코멘트를 요청한다. "
+        "캐시 히트 시 즉시 결과를 반환하고, 캐시 미스 시 task_id를 반환한다. "
+        "결과 조회는 GET /{task_id} 엔드포인트를 사용한다."
+    ),
+)
+async def request_guest_analysis(
+    data: GuestAnalysisRequest,  # 요청 body에서 건강 수치를 직접 받음 (인증 불필요)
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    redis: Annotated[Redis, Depends(get_redis)],
+) -> Response:
+    service = HealthAnalysisService(session, redis)
+    result = await service.request_guest_analysis(data)
+    return Response(result.model_dump(), status_code=status.HTTP_200_OK)
 
 
 @analysis_router.post(
