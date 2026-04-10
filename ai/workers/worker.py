@@ -37,7 +37,8 @@ def ml1_comment(user_info: dict) -> dict:
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt}
         ],
-        temperature=0
+        temperature=0,
+        timeout=60
     )
 
     raw = response.choices[0].message.content
