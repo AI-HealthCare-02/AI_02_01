@@ -5,15 +5,11 @@ ML1: XGBoost 위험도 예측 + ChatGPT 건강 코멘트 생성
 
 import json
 import os
-
-from dotenv import load_dotenv
 from openai import OpenAI
-
 from ai.workers.predict import predict, recalculate_risk  # noqa: F401
 from ai.workers.prompt import SYSTEM_PROMPT, build_user_prompt
 
-# 환경변수 로드 (.env 파일이 존재하면 읽음)
-load_dotenv()
+
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 
