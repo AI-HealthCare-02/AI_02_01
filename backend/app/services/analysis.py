@@ -24,10 +24,24 @@ from app.repositories.health_repository import HealthRecordRepository
 
 logger = logging.getLogger(__name__)
 
-# Backend에서 Celery task를 이름 기반으로 호출 (AI 의존성 불필요)
+# ──────────────────────────────────────────────
+# Celery 클라이언트 역할별 분리
+#
+# send_task() 호출 시 Redis backend가 설정되어 있으면
+# Pub/Sub result consumer를 즉시 구독 시도 → 연결 실패 시 RuntimeError 발생
+#
+# 해결: 발송과 결과 조회를 별도 앱으로 분리
+#   - _celery_sender: broker만 설정 → Pub/Sub 구독 없음
+#   - _celery_result: broker + backend 설정 → AsyncResult 조회 전용
+# ──────────────────────────────────────────────
 config = Config()
-celery_app = Celery(
-    broker=config.CELERY_BROKER_URL,  # DB 0: task 대기열
+
+# 태스크 발송 전용 (Pub/Sub result consumer 미설정)
+_celery_sender = Celery(broker=config.CELERY_BROKER_URL)
+
+# 결과 조회 전용 (backend 필요)
+_celery_result = Celery(
+    broker=config.CELERY_BROKER_URL,
     backend=config.CELERY_BACKEND_URL,  # DB 1: task 완료 결과 저장
 )
 
@@ -79,7 +93,7 @@ class HealthAnalysisService:
             )
 
         # 4. Celery task 제출 (이름 기반 호출, AI 모듈 import 불필요)
-        task = celery_app.send_task(
+        task = _celery_sender.send_task(
             "ml1.analyze_health",
             args=[user_data, nickname, challenge_days],
         )
@@ -120,7 +134,7 @@ class HealthAnalysisService:
             return AnalysisResultResponse(status="success", data=json.loads(cached))
 
         # 3. Celery task 제출 (이름 기반 호출, AI 모듈 import 불필요)
-        task = celery_app.send_task(
+        task = _celery_sender.send_task(
             "ml1.analyze_health",
             args=[user_data, nickname, challenge_days],
         )
@@ -135,7 +149,7 @@ class HealthAnalysisService:
         - SUCCESS: 완료, 결과 반환
         - FAILURE: 실패, 에러 메시지 반환
         """
-        result = AsyncResult(task_id, app=celery_app)
+        result = AsyncResult(task_id, app=_celery_result)
 
         if result.state == "PENDING":
             return AnalysisResultResponse(status="pending")
