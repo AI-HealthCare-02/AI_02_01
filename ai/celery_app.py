@@ -47,7 +47,7 @@ celery_app.conf.update(
     # Worker가 한 번에 가져오는 작업 수
     worker_prefetch_multiplier=1,
     # 작업 타임아웃: 120초 (ML1은 OpenAI API 호출 포함)
-    task_time_limit=120,
+    task_time_limit=300,
     # 소프트 타임아웃: 110초
-    task_soft_time_limit=110,
+    task_soft_time_limit=280,
 )
