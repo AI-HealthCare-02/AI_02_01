@@ -78,7 +78,7 @@ class Token:
     @classmethod
     def for_user(cls, user: User) -> Self:
         token = cls()
-        token["user_id"] = user.id
+        token["id"] = user.id
         return token
 
 
