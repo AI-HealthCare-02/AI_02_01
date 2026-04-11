@@ -10,14 +10,36 @@ Vision API Celery Tasks (v2 — 피드백 반영)
 
 import asyncio
 import base64
+import json
 import logging
+import os
+
+import redis as sync_redis
 
 from ai.celery_app import celery_app
-from .meal_service import MealService
-from .exercise_service import ExerciseService
+
 from .client import ALLOWED_MEDIA_TYPES
+from .exercise_service import ExerciseService
+from .meal_service import MealService
 
 logger = logging.getLogger(__name__)
+
+# ──────────────────────────────────────────────
+# Pub/Sub 발행 Redis 클라이언트 (DB 3)
+# ──────────────────────────────────────────────
+_REDIS_BASE = os.getenv("REDIS_URL", "redis://localhost:6379/0").rsplit("/", 1)[0]
+_PUBSUB_REDIS_URL = os.getenv("REDIS_PUBSUB_URL", _REDIS_BASE + "/3")
+_pubsub_redis = sync_redis.from_url(_PUBSUB_REDIS_URL, decode_responses=True)
+
+
+def _publish_result(task_id: str, payload: dict) -> None:
+    """태스크 완료 결과를 Redis Pub/Sub 채널에 발행한다."""
+    channel = f"task:result:{task_id}"
+    try:
+        _pubsub_redis.publish(channel, json.dumps(payload))
+        logger.info("Pub/Sub 발행 완료 - channel: %s", channel)
+    except Exception as pub_err:
+        logger.warning("Pub/Sub 발행 실패 (무시) - %s", pub_err)
 
 # ──────────────────────────────────────────────
 # 서비스 인스턴스 (Worker 프로세스당 1개)
@@ -58,8 +80,8 @@ def validate_input(image_base64: str, media_type: str) -> bytes:
     # 3) base64 디코딩
     try:
         image_bytes = base64.b64decode(image_base64)
-    except Exception:
-        raise InvalidInputError("base64 디코딩 실패 — 이미지 데이터가 손상되었습니다.")
+    except Exception as decode_err:
+        raise InvalidInputError("base64 디코딩 실패 — 이미지 데이터가 손상되었습니다.") from decode_err
 
     # 4) 디코딩된 데이터 크기 검증
     if len(image_bytes) == 0:
@@ -132,11 +154,16 @@ def _run_vision_task(self, task_name: str, image_base64: str, media_type: str, s
     try:
         result = asyncio.run(service_call(image_bytes))
         logger.info(f"[{task_name}] 완료 | task_id={task_id}")
-        return success_response(task_name, task_id, result)
+        response = success_response(task_name, task_id, result)
+
+        # Pub/Sub 발행 (SSE 구독 중인 클라이언트에 실시간 전달)
+        _publish_result(task_id, response)
+
+        return response
 
     except Exception as exc:
         logger.error(f"[{task_name}] API 오류 (retry 시도) | task_id={task_id} | {exc}")
-        raise self.retry(exc=exc)
+        raise self.retry(exc=exc) from exc
 
 
 # ══════════════════════════════════════════════
