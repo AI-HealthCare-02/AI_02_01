@@ -11,12 +11,10 @@ ML2 Vision API 라우터 — 식단 분석 / 운동 캡처 인증 엔드포인�
 """
 
 import base64
-import json
 from typing import Annotated
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import JSONResponse as Response
-from fastapi.responses import StreamingResponse
 
 from app.dtos.ai_vision import (
     ErrorResponse,
@@ -24,7 +22,7 @@ from app.dtos.ai_vision import (
     TaskResultResponse,
 )
 from app.services.ai_vision_service import AIVisionService
-from app.utils.pubsub import stream_task_result
+from app.utils.pubsub import wait_task_result
 
 # 허용 MIME 타입 (OpenAI Vision API 지원 형식)
 _ALLOWED_MEDIA_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
@@ -188,8 +186,12 @@ async def analyze_exercise(
 @ai_vision_router.get(
     "/tasks/{task_id}",
     response_model=TaskResultResponse,
-    summary="태스크 결과 조회 (폴링)",
-    description="task_id로 Celery 태스크의 상태와 결과를 조회합니다.",
+    summary="태스크 현재 상태 즉시 확인",
+    description=(
+        "태스크의 현재 상태를 즉시 반환한다. "
+        "결과가 없으면 PENDING을 반환하고 연결이 끊긴다. "
+        "실시간 결과 수신이 필요하면 GET /tasks/{task_id}/wait을 사용한다."
+    ),
     responses={
         200: {"description": "태스크 결과", "model": TaskResultResponse},
     },
@@ -203,38 +205,49 @@ async def get_task_result(task_id: str) -> Response:
 
 
 @ai_vision_router.get(
-    "/tasks/{task_id}/stream",
-    summary="태스크 결과 실시간 수신 (SSE)",
+    "/tasks/{task_id}/wait",
+    response_model=TaskResultResponse,
+    summary="태스크 결과 조회 (롱 폴링)",
     description=(
-        "Redis Pub/Sub을 통해 Vision AI 분석 완료 결과를 실시간으로 수신한다.\n\n"
-        "**SSE(Server-Sent Events) 방식**: 연결 후 결과가 도착하면 즉시 수신하고 연결이 종료된다.\n\n"
-        "**이벤트 종류**\n"
-        "- `connected`: 구독 연결 확인 (최초 1회)\n"
-        "- `data`: 분석 완료 결과 (JSON)\n"
-        "- `timeout`: 120초 초과 시 연결 종료\n"
-        "- `error`: 서버 오류\n\n"
-        "**폴링 방식과 비교**: 반복 요청 없이 결과 즉시 수신 가능"
+        "결과가 준비될 때까지 서버에서 최대 30초 대기 후 반환한다.\n\n"
+        "**롱 폴링 방식**\n"
+        "- 결과 도착 즉시 응답 → 클라이언트 연결 유지 불필요\n"
+        "- 30초 내 완료되면 즉시 반환, 타임아웃 시 `PENDING` 반환\n"
+        "- 타임아웃 수신 시 클라이언트가 즉시 재요청\n\n"
+        "**일반 폴링과 차이**\n"
+        "- 일반 폴링: 서버가 즉시 PENDING 반환 → 클라이언트가 N초 후 재요청\n"
+        "- 롱 폴링: 서버가 결과 올 때까지 대기 → 1회 요청으로 결과 수신"
     ),
-    response_class=StreamingResponse,
+    responses={
+        200: {"description": "태스크 결과 또는 PENDING(타임아웃)", "model": TaskResultResponse},
+    },
 )
-async def stream_vision_result(task_id: str) -> StreamingResponse:
-    # 이미 완료된 태스크라면 SSE 없이 즉시 반환
+async def wait_task_result_endpoint(task_id: str) -> Response:
+    # 1. 이미 완료된 결과가 있으면 즉시 반환 (Pub/Sub 구독 불필요)
     result = ai_vision_service.get_task_result(task_id)
     if result.get("status") not in ("PENDING", None):
-
-        async def _immediate():
-            yield f"event: connected\ndata: {json.dumps({'task_id': task_id})}\n\n"
-            yield f"data: {json.dumps(result)}\n\n"
-
-        return StreamingResponse(
-            _immediate(),
-            media_type="text/event-stream",
-            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        return Response(
+            content=TaskResultResponse(**result).model_dump(),
+            status_code=status.HTTP_200_OK,
         )
 
-    # 대기 중 → Pub/Sub 채널 구독 후 결과 도착 시 SSE 전달
-    return StreamingResponse(
-        stream_task_result(task_id),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    # 2. 아직 처리 중 → Pub/Sub 채널 구독 후 최대 30초 대기
+    data = await wait_task_result(task_id)
+
+    if data is None:
+        # 타임아웃 → PENDING 반환, 클라이언트가 즉시 재요청
+        return Response(
+            content=TaskResultResponse(task_id=task_id, status="PENDING", result=None, error=None).model_dump(),
+            status_code=status.HTTP_200_OK,
+        )
+
+    # 3. 결과 도착 → 즉시 반환
+    return Response(
+        content=TaskResultResponse(
+            task_id=task_id,
+            status=data.get("status", "FAILURE"),
+            result=data.get("data"),
+            error=data.get("error"),
+        ).model_dump(),
+        status_code=status.HTTP_200_OK,
     )
