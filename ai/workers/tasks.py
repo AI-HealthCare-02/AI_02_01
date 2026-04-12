@@ -78,6 +78,7 @@ def analyze_health(self, user_data: dict, nickname: str = "사용자", challenge
 
         # 캐시 저장
         cache_key = _build_cache_key(user_data, nickname, challenge_days)
+        logger.info("cache_key: %s", cache_key)
         try:
             cache_redis.setex(cache_key, CACHE_TTL, json.dumps(result))
             logger.info("ML1 캐시 저장 완료 - key: %s", cache_key)

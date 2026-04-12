@@ -3,19 +3,27 @@
 ML1: XGBoost + SHAP
 """
 
+import logging
 import os
+
 import joblib
 import numpy as np
 import pandas as pd
 import shap
 
+logger = logging.getLogger(__name__)
+
 MODEL_PATH = os.getenv('ML1_MODEL_PATH', 'ai/models/xgboost_model.pkl')
 SCALER_PATH = os.getenv('ML1_SCALER_PATH', 'ai/models/scaler.pkl')
 
-
+logger.info("모델 로딩 시작 - path: %s", MODEL_PATH)
 model = joblib.load(MODEL_PATH)
 scaler = joblib.load(SCALER_PATH)
+logger.info("모델 로딩 완료")
+
+logger.info("SHAP TreeExplainer 초기화 시작")
 explainer = shap.TreeExplainer(model)
+logger.info("SHAP TreeExplainer 초기화 완료")
 
 # ── 상수 정의
 
@@ -217,12 +225,16 @@ def predict(user_data: dict) -> dict:
         }
     """
     # 전처리
+    logger.info("전처리 시작")
     df_input = preprocess(user_data)
+    logger.info("전처리 완료")
 
-    # 예측
+    # 예측 (OMP_NUM_THREADS=1 설정으로 Celery fork 환경 교착 방지)
+    logger.info("XGBoost 예측 시작")
     risk_percent = float(
         model.predict_proba(df_input)[0][1] * 100
     )
+    logger.info("XGBoost 예측 완료 - risk_percent: %.1f", risk_percent)
 
     # 결과 조합
     return {
