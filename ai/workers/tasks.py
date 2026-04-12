@@ -16,15 +16,31 @@ from ai.workers.worker import ml1_run
 logger = logging.getLogger(__name__)
 
 # ──────────────────────────────────────────────
-# Redis 캐시 클라이언트 (DB 2번 - ML1 분석 결과 캐시 전용)
+# Redis 클라이언트 설정
+# DB 2: ML1 분석 결과 캐시 (24시간 TTL)
+# DB 3: Pub/Sub 발행 (태스크 완료 실시간 알림)
 # ──────────────────────────────────────────────
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-# DB 1번으로 변경하여 Celery broker(DB 0번)와 분리
-CACHE_REDIS_URL = os.getenv("REDIS_CACHE_URL", REDIS_URL.rsplit("/", 1)[0] + "/2")
+_redis_base = REDIS_URL.rsplit("/", 1)[0]
+
+CACHE_REDIS_URL = os.getenv("REDIS_CACHE_URL", _redis_base + "/2")
+PUBSUB_REDIS_URL = os.getenv("REDIS_PUBSUB_URL", _redis_base + "/3")
+
 cache_redis = redis.from_url(CACHE_REDIS_URL, decode_responses=True)
+pubsub_redis = redis.from_url(PUBSUB_REDIS_URL, decode_responses=True)
 
 # 캐시 TTL: 24시간
 CACHE_TTL = 86400
+
+
+def _publish_result(task_id: str, payload: dict) -> None:
+    """태스크 완료 결과를 Redis Pub/Sub 채널에 발행한다."""
+    channel = f"task:result:{task_id}"
+    try:
+        pubsub_redis.publish(channel, json.dumps(payload))
+        logger.info("Pub/Sub 발행 완료 - channel: %s", channel)
+    except Exception as pub_err:
+        logger.warning("Pub/Sub 발행 실패 (무시) - %s", pub_err)
 
 
 def _build_cache_key(user_data: dict, nickname: str, challenge_days: int) -> str:
@@ -62,20 +78,26 @@ def analyze_health(self, user_data: dict, nickname: str = "사용자", challenge
 
         # 캐시 저장
         cache_key = _build_cache_key(user_data, nickname, challenge_days)
+        logger.info("cache_key: %s", cache_key)
         try:
             cache_redis.setex(cache_key, CACHE_TTL, json.dumps(result))
             logger.info("ML1 캐시 저장 완료 - key: %s", cache_key)
         except Exception as cache_err:
             logger.warning("ML1 캐시 저장 실패 (무시) - %s", cache_err)
 
-        logger.info("ML1 분석 완료 - task_id: %s", task_id)
-        return {
+        result_payload = {
             "status": "success",
             "task_id": task_id,
             "data": result,
             "error": None,
         }
 
+        # Pub/Sub 발행 (SSE 구독 중인 클라이언트에 실시간 전달)
+        _publish_result(task_id, result_payload)
+
+        logger.info("ML1 분석 완료 - task_id: %s", task_id)
+        return result_payload
+
     except Exception as exc:
         logger.error("ML1 분석 실패 (retry 시도) - task_id: %s, error: %s", task_id, exc)
-        raise self.retry(exc=exc)
+        raise self.retry(exc=exc) from exc

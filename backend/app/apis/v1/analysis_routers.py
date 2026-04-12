@@ -11,6 +11,7 @@ from app.dependencies.security import get_request_user
 from app.dtos.analysis import AnalysisResultResponse, AnalysisTaskResponse, GuestAnalysisRequest
 from app.models.users import User
 from app.services.analysis import HealthAnalysisService
+from app.utils.pubsub import wait_task_result
 
 # /api/v1/health/analysis 경로의 라우터. AI 건강 분석 API를 담당한다.
 analysis_router = APIRouter(prefix="/health/analysis", tags=["analysis"])
@@ -24,11 +25,11 @@ analysis_router = APIRouter(prefix="/health/analysis", tags=["analysis"])
     description=(
         "로그인 없이 건강 수치를 직접 입력하여 심혈관 위험도 예측 및 건강 코멘트를 요청한다. "
         "캐시 히트 시 즉시 결과를 반환하고, 캐시 미스 시 task_id를 반환한다. "
-        "결과 조회는 GET /{task_id} 엔드포인트를 사용한다."
+        "결과 조회는 GET /{task_id}/wait 엔드포인트를 사용한다."
     ),
 )
 async def request_guest_analysis(
-    data: GuestAnalysisRequest,  # 요청 body에서 건강 수치를 직접 받음 (인증 불필요)
+    data: GuestAnalysisRequest,
     session: Annotated[AsyncSession, Depends(get_db_session)],
     redis: Annotated[Redis, Depends(get_redis)],
 ) -> Response:
@@ -44,14 +45,15 @@ async def request_guest_analysis(
     summary="AI 건강 분석 요청",
     description=(
         "건강검진 기록 ID를 기반으로 심혈관 위험도 예측 및 건강 코멘트를 요청한다. "
-        "캐시 히트 시 즉시 결과를 반환하고, 캐시 미스 시 task_id를 반환한다."
+        "캐시 히트 시 즉시 결과를 반환하고, 캐시 미스 시 task_id를 반환한다. "
+        "결과 조회는 GET /{task_id}/wait 엔드포인트를 사용한다."
     ),
 )
 async def request_analysis(
-    record_id: int,  # URL 경로에서 건강검진 기록 ID를 받음
-    user: Annotated[User, Depends(get_request_user)],  # JWT 토큰으로 현재 로그인 사용자 확인
-    session: Annotated[AsyncSession, Depends(get_db_session)],  # DB 세션 자동 주입
-    redis: Annotated[Redis, Depends(get_redis)],  # Redis 클라이언트 주입
+    record_id: int,
+    user: Annotated[User, Depends(get_request_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    redis: Annotated[Redis, Depends(get_redis)],
 ) -> Response:
     service = HealthAnalysisService(session, redis)
     result = await service.request_analysis(record_id, user)
@@ -62,14 +64,67 @@ async def request_analysis(
     "/{task_id}",
     response_model=AnalysisResultResponse,
     status_code=status.HTTP_200_OK,
-    summary="AI 분석 결과 조회",
-    description="비동기 AI 분석 작업의 결과를 조회한다. 작업이 완료되면 분석 결과를, 미완료 시 pending 상태를 반환한다.",
+    summary="AI 분석 현재 상태 즉시 확인",
+    description=(
+        "태스크의 현재 상태를 즉시 반환한다. "
+        "결과가 없으면 pending을 반환하고 연결이 끊긴다. "
+        "실시간 결과 수신이 필요하면 GET /{task_id}/wait을 사용한다."
+    ),
 )
 async def get_analysis_result(
-    task_id: str,  # URL 경로에서 Celery task ID를 받음
+    task_id: str,
     session: Annotated[AsyncSession, Depends(get_db_session)],
     redis: Annotated[Redis, Depends(get_redis)],
 ) -> Response:
     service = HealthAnalysisService(session, redis)
     result = await service.get_analysis_result(task_id)
     return Response(result.model_dump(), status_code=status.HTTP_200_OK)
+
+
+@analysis_router.get(
+    "/{task_id}/wait",
+    response_model=AnalysisResultResponse,
+    status_code=status.HTTP_200_OK,
+    summary="AI 분석 결과 조회 (롱 폴링)",
+    description=(
+        "결과가 준비될 때까지 서버에서 최대 30초 대기 후 반환한다.\n\n"
+        "**롱 폴링 방식**\n"
+        "- 결과 도착 즉시 응답 → 클라이언트 연결 유지 불필요\n"
+        "- 30초 내 완료되면 즉시 반환, 타임아웃 시 `pending` 반환\n"
+        "- 타임아웃 수신 시 클라이언트가 즉시 재요청\n\n"
+        "**일반 폴링과 차이**\n"
+        "- 일반 폴링: 서버가 즉시 pending 반환 → 클라이언트가 N초 후 재요청\n"
+        "- 롱 폴링: 서버가 결과 올 때까지 대기 → 1회 요청으로 결과 수신"
+    ),
+)
+async def wait_analysis_result(
+    task_id: str,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    redis: Annotated[Redis, Depends(get_redis)],
+) -> Response:
+    service = HealthAnalysisService(session, redis)
+
+    # 1. 이미 완료된 결과가 있으면 즉시 반환 (Pub/Sub 구독 불필요)
+    result = await service.get_analysis_result(task_id)
+    if result.status != "pending":
+        return Response(result.model_dump(), status_code=status.HTTP_200_OK)
+
+    # 2. 아직 처리 중 → Pub/Sub 채널 구독 후 최대 30초 대기
+    data = await wait_task_result(task_id)
+
+    if data is None:
+        # 타임아웃 → pending 반환, 클라이언트가 즉시 재요청
+        return Response(
+            AnalysisResultResponse(status="pending").model_dump(),
+            status_code=status.HTTP_200_OK,
+        )
+
+    # 3. 결과 도착 → 즉시 반환
+    return Response(
+        AnalysisResultResponse(
+            status=data.get("status", "failed"),
+            data=data.get("data"),
+            error=data.get("error"),
+        ).model_dump(),
+        status_code=status.HTTP_200_OK,
+    )
