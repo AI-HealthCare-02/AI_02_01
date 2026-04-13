@@ -101,3 +101,44 @@ def analyze_health(self, user_data: dict, nickname: str = "사용자", challenge
     except Exception as exc:
         logger.error("ML1 분석 실패 (retry 시도) - task_id: %s, error: %s", task_id, exc)
         raise self.retry(exc=exc) from exc
+    
+# ──────────────────────────────────────────────
+# ML1 챌린지 달성 후 재계산 Celery Task
+# ──────────────────────────────────────────────
+@celery_app.task(
+    name="ml1.recalculate_risk",
+    bind=True,
+    max_retries=2,
+    default_retry_delay=5,
+)
+def recalculate_health(self, user_data: dict, completed_challenges: list, nickname: str = "사용자") -> dict:
+    """
+    챌린지 달성 후 위험도 재계산
+
+    Args:
+        user_data: 사용자 건강 데이터
+        completed_challenges: ['smoke_7days', 'active_7days']
+        nickname: 사용자 닉네임
+    """
+    from ai.workers.predict import recalculate_risk
+
+    task_id = self.request.id
+    logger.info("ML1 재계산 시작 - task_id: %s", task_id)
+
+    try:
+        result = recalculate_risk(user_data, completed_challenges)
+
+        result_payload = {
+            "status": "success",
+            "task_id": task_id,
+            "data": result,
+            "error": None,
+        }
+
+        _publish_result(task_id, result_payload)
+        logger.info("ML1 재계산 완료 - task_id: %s", task_id)
+        return result_payload
+
+    except Exception as exc:
+        logger.error("ML1 재계산 실패 - task_id: %s, error: %s", task_id, exc)
+        raise self.retry(exc=exc) from exc

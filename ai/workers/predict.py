@@ -302,3 +302,30 @@ if __name__ == '__main__':
         print(f"{k}: {v}")
 
     print(f"\n위험도 변화: {result['risk_percent']} → {result2['risk_percent']}%")
+
+    # ── 챌린지 맞춤 추천 함수
+RISK_FACTOR_MAP = {
+    '고혈압': '고혈압',
+    '고령+고혈압': '고혈압',
+    '고콜레스테롤': '고콜레스테롤',
+    '고령+고콜레스테롤': '고콜레스테롤',
+    '고혈당': '고혈당',
+    '비만+고혈압': '과체중',
+    '고령·과체중': '과체중',
+    '흡연': '흡연자',
+    '흡연+음주': '음주자',
+    '운동부족': '과체중',
+}
+
+def recommend_challenges(top_risk_factors: list) -> list:
+    """
+    top_risk_factors 기반으로 챌린지 추천
+    Returns: 매칭된 target_risk_factors 목록
+    """
+    targets = set()
+    for factor in top_risk_factors:
+        mapped = RISK_FACTOR_MAP.get(factor)
+        if mapped:
+            targets.add(mapped)
+    targets.add('공통')  # 항상 공통 챌린지 포함
+    return list(targets)
