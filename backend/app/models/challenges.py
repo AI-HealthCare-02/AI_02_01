@@ -24,6 +24,7 @@ class UserChallengeStatusEnum(str, enum.Enum):
     ACTIVE = "active"
     COMPLETED = "completed"
     ABANDONED = "abandoned"
+    FAILED = "failed" 
 
 
 # 챌린지 마스터 테이블
