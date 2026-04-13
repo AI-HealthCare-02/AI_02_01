@@ -25,38 +25,15 @@ def ml1_predict(user_data: dict) -> dict:
 
 # ── ML1 LLM 코멘트 함수
 def ml1_comment(user_info: dict) -> dict:
-    """
-    위험도 결과 → 건강 코멘트 생성
-    Celery prefork 환경에서 fork-safety 문제 방지를 위해
-    OpenAI 클라이언트를 함수 내부에서 생성
-    """
-    # fork된 워커 프로세스마다 독립적인 클라이언트 인스턴스 생성
-    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-    user_prompt = build_user_prompt(user_info)
+    from langfuse import Langfuse
+    from langfuse.openai import openai as langfuse_openai
 
-    logger.info("OpenAI API 호출 시작")
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_prompt},
-        ],
-        temperature=0,
-        timeout=60,
+    langfuse = Langfuse(
+        public_key=os.getenv("LANGFUSE_PUBLIC_KEY"),
+        secret_key=os.getenv("LANGFUSE_SECRET_KEY"),
+        host=os.getenv("LANGFUSE_HOST", "http://localhost:3000")
     )
-    logger.info("OpenAI API 호출 완료")
-
-    raw = response.choices[0].message.content
-
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        return {
-            "evaluation": "건강 데이터를 분석했습니다.",
-            "alert": None,
-            "missions": [],
-            "encouragement": "오늘도 건강한 하루 보내세요!",
-        }
+    client = langfuse_openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"), timeout=60)
 
 
 # ── ML1 통합 실행 함수
