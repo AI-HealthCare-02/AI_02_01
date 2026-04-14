@@ -10,7 +10,7 @@ import os
 import json
 import base64
 import logging
-from openai import AsyncOpenAI
+from langfuse.openai import AsyncOpenAI
 
 logger = logging.getLogger(__name__)
 
