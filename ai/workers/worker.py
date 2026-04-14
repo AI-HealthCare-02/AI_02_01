@@ -6,6 +6,7 @@ ML1: XGBoost 위험도 예측 + ChatGPT 건강 코멘트 생성
 import json
 import logging
 import os
+import asyncio
 
 from openai import OpenAI
 
@@ -99,7 +100,7 @@ if __name__ == "__main__":
         "active": 0,
     }
 
-    result = ml1_run(sample, nickname="건강이", challenge_days=3)
+    result = asyncio.run(ml1_run(sample, nickname="건강이", challenge_days=3))
 
     print("=== ML1 XGBoost 결과 ===")
     for k, v in result["ml1_predict"].items():
