@@ -49,5 +49,14 @@ class DashboardResponse(BaseSerializerModel):
     created_at: datetime
 
 
+class WithdrawRequest(BaseModel):
+    """회원 탈퇴 요청 (탈퇴 사유 선택 입력)"""
+
+    reason: Annotated[
+        str | None,
+        Field(None, max_length=500, description="탈퇴 사유 (선택, 최대 500자)"),
+    ]
+
+
 class WithdrawResponse(BaseModel):
     message: str

@@ -29,6 +29,7 @@ class User(Base):
     current_point: Mapped[int] = mapped_column(Integer, nullable=False, default=0, comment="현재 보유 포인트")
     is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, comment="탈퇴 여부 (Soft Delete)")
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, comment="탈퇴 처리 시각")
+    withdraw_reason: Mapped[str | None] = mapped_column(String(500), nullable=True, comment="탈퇴 사유 (재가입 시 초기화)")
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now(), comment="계정 생성 시각")
 
     @hybrid_property
