@@ -19,8 +19,10 @@ from starlette import status
 from app.core.config import Config
 from app.dtos.analysis import AnalysisResultResponse, AnalysisTaskResponse, GuestAnalysisRequest
 from app.models.health import HealthRecord
+from app.models.prediction_results import TriggerTypeEnum
 from app.models.users import User
 from app.repositories.health_repository import HealthRecordRepository
+from app.repositories.prediction_result_repository import PredictionResultRepository
 
 logger = logging.getLogger(__name__)
 
@@ -48,13 +50,22 @@ _celery_result = Celery(
 # 캐시 TTL: 24시간
 CACHE_TTL = 86400
 
+# task_meta TTL: 24시간 (task_id → record_id 매핑 보존 기간)
+TASK_META_TTL = 86400
+
 
 class HealthAnalysisService:
     """건강검진 AI 분석 비즈니스 로직"""
 
     def __init__(self, session: AsyncSession, redis: Redis):
-        self.repo = HealthRecordRepository(session)
+        self.health_repo = HealthRecordRepository(session)
+        self.prediction_repo = PredictionResultRepository(session)
         self.redis = redis
+
+    @property
+    def repo(self) -> HealthRecordRepository:
+        """하위 호환성 유지용 프로퍼티 (기존 self.repo 참조 유지)"""
+        return self.health_repo
 
     async def request_analysis(self, record_id: int, user: User) -> AnalysisResultResponse | AnalysisTaskResponse:
         """
@@ -98,6 +109,10 @@ class HealthAnalysisService:
             args=[user_data, nickname, challenge_days],
         )
         logger.info("ML1 분석 task 제출 - user_id: %d, task_id: %s", user.id, task.id)
+
+        # 5. task_id → record_id 매핑을 Redis에 저장 (결과 수신 시 DB 저장에 사용)
+        task_meta = json.dumps({"record_id": record_id, "trigger_type": TriggerTypeEnum.NEW_RECORD.value})
+        await self.redis.set(f"ml1:task_meta:{task.id}", task_meta, ex=TASK_META_TTL)
 
         return AnalysisTaskResponse(task_id=task.id, status="pending")
 
@@ -157,10 +172,9 @@ class HealthAnalysisService:
         if result.state == "SUCCESS":
             task_result = result.result
             if isinstance(task_result, dict) and task_result.get("status") == "success":
-                return AnalysisResultResponse(
-                    status="success",
-                    data=task_result.get("data"),
-                )
+                data = task_result.get("data")
+                await self._persist_prediction_result(task_id, data)
+                return AnalysisResultResponse(status="success", data=data)
             return AnalysisResultResponse(status="success", data=task_result)
 
         if result.state == "FAILURE":
@@ -169,6 +183,104 @@ class HealthAnalysisService:
 
         # RETRY, STARTED 등 기타 상태
         return AnalysisResultResponse(status="pending")
+
+    async def get_prediction_history(self, user_id: int, limit: int = 20) -> list:
+        """
+        사용자의 예측 결과 목록 조회 (최신순).
+        prediction_results → health_records JOIN으로 본인 기록만 반환한다.
+        """
+        return await self.prediction_repo.get_list_by_user(user_id, limit=limit)
+
+    async def get_prediction_result_by_record(self, record_id: int, user: User) -> list:
+        """
+        특정 건강검진 기록의 예측 결과 목록 조회.
+        소유권 검증 후 반환한다.
+        """
+        record = await self.health_repo.get_record(record_id)
+        if not record:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="해당 건강검진 기록을 찾을 수 없습니다.",
+            )
+        if record.user_id != user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="본인의 건강검진 기록만 조회할 수 있습니다.",
+            )
+        return await self.prediction_repo.get_list_by_record_id(record_id)
+
+    async def _persist_prediction_result(self, task_id: str, data: dict | None) -> None:
+        """
+        Celery task 완료 시 예측 결과를 prediction_results DB에 저장.
+        - Redis task_meta에서 record_id, trigger_type을 조회한다.
+        - 중복 저장 방지: ml1:result_saved:{task_id} 플래그 확인
+        - data가 없거나 task_meta가 없으면 조용히 종료 (비회원 분석 등)
+        """
+        if not data:
+            return
+
+        # 중복 저장 방지 확인
+        saved_flag = await self.redis.get(f"ml1:result_saved:{task_id}")
+        if saved_flag:
+            return
+
+        # task_meta에서 record_id, trigger_type 조회
+        raw_meta = await self.redis.get(f"ml1:task_meta:{task_id}")
+        if not raw_meta:
+            # 비회원 분석 또는 메타 만료 → 저장 불필요
+            return
+
+        meta = json.loads(raw_meta)
+        record_id = meta.get("record_id")
+        trigger_type_value = meta.get("trigger_type", TriggerTypeEnum.NEW_RECORD.value)
+
+        if not record_id:
+            return
+
+        # ML1 결과 데이터 파싱 (ml1_predict, ml1_comment 구조)
+        # data.get()의 기본값 {}은 키가 없을 때만 적용되므로,
+        # 키는 있지만 값이 None인 경우를 대비해 'or {}'로 None 방어 처리
+        ml1_predict = data.get("ml1_predict") or {}
+        ml1_comment = data.get("ml1_comment") or {}
+
+        # predict()가 반환하는 한글 risk_grade → DB 영문 enum 변환
+        _risk_grade_map = {
+            "낮음": "low",
+            "보통": "moderate",
+            "중간": "medium",
+            "높음": "high",
+            "매우높음": "very_high",
+        }
+        risk_level = _risk_grade_map.get(ml1_predict.get("risk_grade", ""))
+
+        prediction_data = {
+            "record_id": record_id,
+            "trigger_type": trigger_type_value,
+            # predict() 반환 키: risk_percent, heart_age, risk_grade, top_risk_factors
+            "cvd_risk_percent": ml1_predict.get("risk_percent"),
+            "cvd_age": ml1_predict.get("heart_age"),
+            "risk_level": risk_level,
+            "top_risk_factors": ml1_predict.get("top_risk_factors"),
+            # ml1_comment() (GPT 응답) 반환 키: evaluation, alert, missions, encouragement
+            "ai_evaluation": ml1_comment.get("evaluation"),
+            "ai_alert": ml1_comment.get("alert"),
+            "ai_missions": ml1_comment.get("missions"),
+            "ai_encouragement": ml1_comment.get("encouragement"),
+        }
+
+        # 필수 필드(cvd_risk_percent, cvd_age, risk_level) 누락 시 저장 스킵
+        if not all([prediction_data["cvd_risk_percent"], prediction_data["cvd_age"], prediction_data["risk_level"]]):
+            logger.warning("ML1 결과 필수 필드 누락 - task_id: %s, data: %s", task_id, ml1_predict)
+            return
+
+        try:
+            await self.prediction_repo.create(prediction_data)
+            # 중복 저장 방지 플래그 설정 (24시간 TTL)
+            await self.redis.set(f"ml1:result_saved:{task_id}", "1", ex=TASK_META_TTL)
+            logger.info("예측 결과 DB 저장 완료 - task_id: %s, record_id: %d", task_id, record_id)
+        except Exception as e:
+            # DB 저장 실패는 결과 반환에 영향을 주지 않도록 로그만 남김
+            logger.error("예측 결과 DB 저장 실패 - task_id: %s, error: %s", task_id, e)
 
     # ──────────────────────────────────────────────
     # 데이터 변환 (private)

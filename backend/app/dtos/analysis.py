@@ -1,7 +1,9 @@
-from datetime import date
+from datetime import date, datetime
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, computed_field, model_validator
+
+from app.dtos.base import BaseSerializerModel
 
 # ──────────────────────────────────────────────
 # Request DTOs
@@ -72,3 +74,27 @@ class AnalysisResultResponse(BaseModel):
     status: str  # "pending" | "success" | "failed"
     data: dict | None = None  # {"ml1_predict": {...}, "ml1_comment": {...}}
     error: str | None = None
+
+
+class PredictionResultResponse(BaseSerializerModel):
+    """DB에 저장된 예측 결과 단건 응답"""
+
+    id: int
+    record_id: int
+    trigger_type: str
+    cvd_risk_percent: float
+    cvd_age: int
+    risk_level: str
+    top_risk_factors: list | None  # SHAP 기반 위험 요인 문자열 목록
+    ai_evaluation: str | None
+    ai_alert: str | None
+    ai_missions: list | None  # 챌린지 추천 목록 (각 항목: title, action, reason)
+    ai_encouragement: str | None
+    created_at: datetime
+
+
+class PredictionResultListResponse(BaseModel):
+    """예측 결과 목록 응답"""
+
+    items: list[PredictionResultResponse]
+    total: int

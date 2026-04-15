@@ -47,9 +47,14 @@ class UserManageService:
         await self.repo.update_instance(user=user, data=update_data)
         return user
 
-    async def withdraw_user(self, user: User) -> None:
-        """사용자의 계정과 모든 관련 데이터를 영구적으로 삭제한다."""
-        await self.repo.hard_delete_user(user)
+    async def withdraw_user(self, user: User, reason: str | None = None) -> None:
+        """
+        사용자 탈퇴 처리 (Soft Delete).
+        is_deleted=True, deleted_at=현재 시각으로 마킹하며 실제 레코드는 유지된다.
+        탈퇴 사유는 선택 입력이며 withdraw_reason 컬럼에 저장된다.
+        이후 인증 시 get_request_user에서 자동으로 접근이 차단된다.
+        """
+        await self.repo.soft_delete_user(user, reason=reason)
 
     async def get_dashboard(self, user: User) -> DashboardResponse:
         """마이페이지 대시보드에 표시할 건강 현황 요약 정보를 반환한다."""

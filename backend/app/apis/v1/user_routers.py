@@ -11,6 +11,7 @@ from app.dtos.users import (
     InitialProfileRequest,
     ProfileUpdateRequest,
     UserInfoResponse,
+    WithdrawRequest,
     WithdrawResponse,
 )
 from app.models.users import User
@@ -74,14 +75,15 @@ async def update_profile(
     response_model=WithdrawResponse,
     status_code=status.HTTP_200_OK,
     summary="회원 탈퇴",
-    description="로그인한 사용자의 계정과 모든 관련 데이터를 영구적으로 삭제한다.",
+    description="로그인한 사용자의 계정을 탈퇴 처리한다. 탈퇴 사유는 선택 입력이며 최대 500자이다.",
 )
 async def withdraw_user(
-    user: Annotated[User, Depends(get_request_user)],  # 탈퇴할 사용자 본인 확인
+    data: WithdrawRequest,
+    user: Annotated[User, Depends(get_request_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> Response:
     service = UserManageService(session)
-    await service.withdraw_user(user)
+    await service.withdraw_user(user, reason=data.reason)
     return Response(
         WithdrawResponse(message="회원 탈퇴가 완료되었습니다.").model_dump(),
         status_code=status.HTTP_200_OK,
