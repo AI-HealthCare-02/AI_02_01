@@ -1,36 +1,34 @@
-import { GoogleLogin } from "@react-oauth/google";
+import { useGoogleLogin } from "@react-oauth/google";
 
 const LoginPage = () => {
-  const handleGoogleSuccess = async (credentialResponse: any) => {
-    console.log("Google login success:", credentialResponse);
+  const login = useGoogleLogin({
+    onSuccess: async (codeResponse) => {
+      console.log("Google login success:", codeResponse);
 
-    const idToken = credentialResponse.credential;
+      try {
+        const res = await fetch("http://localhost:8000/api/v1/auth/login/google", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            code: codeResponse.code,
+          }),
+        });
 
-    try {
-      const res = await fetch("http://localhost:8080/auth/google", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          token: idToken,
-        }),
-      });
+          const data = await res.json();
+          console.log("Backend response:", data);
 
-      const data = await res.json();
-      console.log("Backend response:", data);
+          localStorage.setItem("accessToken", data.access_token);
+          window.location.href = "/dashboard";
+        } catch (error) {
+          console.error("Google login failed:", error);
+        }
+      },
+      onError: () => console.log("Google Login Failed"),
+      flow: "auth-code",
+  });
 
-      // 나중에 백엔드 연결되면 사용
-      // localStorage.setItem("accessToken", data.accessToken);
-      // window.location.href = "/dashboard";
-    } catch (error) {
-      console.error("Google login failed:", error);
-    }
-  };
-
-  const handleGoogleError = () => {
-    console.log("Google Login Failed");
-  };
 
   return (
     <div className="login-page">
@@ -85,10 +83,9 @@ const LoginPage = () => {
               </div>
 
               <div className="google-login-box">
-                <GoogleLogin
-                  onSuccess={handleGoogleSuccess}
-                  onError={handleGoogleError}
-                />
+                <button onClick={() => login()}>
+                  구글로 로그인
+                 </button>
               </div>
             </div>
 
