@@ -12,7 +12,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, status
 from fastapi.responses import JSONResponse as Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,6 +27,8 @@ from app.dtos.challenge import (
     UserChallengeResponse,
 )
 from app.services.challenge_service import ChallengeService
+from app.dependencies.security import get_request_user
+from app.models.users import User
 
 # /api/v1/challenges 경로의 라우터
 challenge_router = APIRouter(prefix="/challenges", tags=["challenges"])
@@ -97,11 +99,11 @@ async def get_challenges(
 async def join_challenge(
     challenge_id: int,
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    user_id: int = Query(..., description="사용자 ID (추후 인증 미들웨어로 대체)"),
+    current_user: Annotated[User, Depends(get_request_user)],
 ) -> Response:
     service = ChallengeService(session)
     user_challenge = await service.join_challenge(
-        user_id=user_id,
+        user_id=current_user.id,
         challenge_id=challenge_id,
     )
 
@@ -133,15 +135,20 @@ async def join_challenge(
     responses={
         200: {"description": "포기 처리 완료", "model": MessageResponse},
         400: {"description": "이미 완료/포기된 챌린지", "model": ErrorResponse},
+        403: {"description": "본인 챌린지가 아님", "model": ErrorResponse},
         404: {"description": "존재하지 않는 참여 기록", "model": ErrorResponse},
     },
 )
 async def abandon_challenge(
     user_challenge_id: int,
     session: Annotated[AsyncSession, Depends(get_db_session)],
+    current_user: Annotated[User, Depends(get_request_user)],
 ) -> Response:
     service = ChallengeService(session)
-    await service.abandon_challenge(user_challenge_id)
+    await service.abandon_challenge(
+        user_challenge_id=user_challenge_id,
+        user_id=current_user.id,
+    )
 
     return Response(
         content=MessageResponse(
@@ -166,6 +173,7 @@ async def abandon_challenge(
     responses={
         201: {"description": "인증 성공", "model": ChallengeLogResponse},
         400: {"description": "이미 완료/포기된 챌린지", "model": ErrorResponse},
+        403: {"description": "본인 챌린지가 아님", "model": ErrorResponse},
         404: {"description": "존재하지 않는 참여 기록", "model": ErrorResponse},
         409: {"description": "오늘 이미 인증 완료", "model": ErrorResponse},
     },
@@ -174,10 +182,12 @@ async def log_daily(
     user_challenge_id: int,
     request: ChallengeLogRequest,
     session: Annotated[AsyncSession, Depends(get_db_session)],
+    current_user: Annotated[User, Depends(get_request_user)],
 ) -> Response:
     service = ChallengeService(session)
     log = await service.log_daily(
         user_challenge_id=user_challenge_id,
+        user_id=current_user.id,
         verification_type=request.verification_type,
         input_value=request.input_value,
         cv_result_id=request.cv_result_id,
