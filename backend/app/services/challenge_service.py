@@ -87,16 +87,24 @@ class ChallengeService:
     # 3. 챌린지 포기
     # ══════════════════════════════════════════
 
-    async def abandon_challenge(self, user_challenge_id: int) -> UserChallenge:
+    async def abandon_challenge(
+        self, user_challenge_id: int, user_id: int
+    ) -> UserChallenge:
         """
         챌린지 포기 처리
         검증:
           - user_challenge 존재 여부 (404)
+          - 소유권 (403) — 본인 챌린지만 포기 가능
           - active 상태만 포기 가능 (400)
         """
-        logger.info("챌린지 포기 요청 - user_challenge_id: %d", user_challenge_id)
+        logger.info(
+            "챌린지 포기 요청 - user_challenge_id: %d, user_id: %d",
+            user_challenge_id, user_id,
+        )
 
-        user_challenge = await self._get_active_user_challenge(user_challenge_id)
+        user_challenge = await self._get_active_user_challenge(
+            user_challenge_id, user_id
+        )
 
         updated = await self.repo.update_status(
             user_challenge, UserChallengeStatusEnum.ABANDONED
@@ -111,6 +119,7 @@ class ChallengeService:
     async def log_daily(
         self,
         user_challenge_id: int,
+        user_id: int,
         verification_type: VerificationMethodEnum,
         input_value: str | None = None,
         cv_result_id: int | None = None,
@@ -119,6 +128,7 @@ class ChallengeService:
         챌린지 인증 기록
         검증:
           - user_challenge 존재 여부 (404)
+          - 소유권 (403) — 본인 챌린지만 인증 가능
           - active 상태만 인증 가능 (400)
           - 하루 1회 인증 제한 (409)
         처리:
@@ -126,9 +136,14 @@ class ChallengeService:
           - current_streak 업데이트
           - 챌린지 기간 종료 시(마지막 날 포함) 최종 판정
         """
-        logger.info("챌린지 인증 요청 - user_challenge_id: %d", user_challenge_id)
+        logger.info(
+            "챌린지 인증 요청 - user_challenge_id: %d, user_id: %d",
+            user_challenge_id, user_id,
+        )
 
-        user_challenge = await self._get_active_user_challenge(user_challenge_id)
+        user_challenge = await self._get_active_user_challenge(
+            user_challenge_id, user_id
+        )
 
         # 하루 1회 인증 제한
         today = date.today()
@@ -193,11 +208,16 @@ class ChallengeService:
     # ══════════════════════════════════════════
 
     async def _get_active_user_challenge(
-        self, user_challenge_id: int
+        self, user_challenge_id: int, user_id: int
     ) -> UserChallenge:
         """
-        user_challenge 조회 + active 상태 검증
+        user_challenge 조회 + 소유권 검증 + active 상태 검증
         포기, 챌린지 인증에서 공통으로 사용
+
+        검증 순서 (중요):
+          1. 존재 여부 (404)
+          2. 소유권 (403) — JWT로 인증된 user_id와 user_challenge.user_id 비교
+          3. active 상태 (400)
         """
         user_challenge = await self.repo.get_user_challenge_by_id(user_challenge_id)
 
@@ -205,6 +225,17 @@ class ChallengeService:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"참여 중인 챌린지를 찾을 수 없습니다. (id: {user_challenge_id})",
+            )
+
+        # 소유권 검증: 본인 챌린지가 아니면 403
+        if user_challenge.user_id != user_id:
+            logger.warning(
+                "소유권 검증 실패 - user_challenge_id: %d, owner_id: %d, requester_id: %d",
+                user_challenge_id, user_challenge.user_id, user_id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="본인의 챌린지가 아닙니다.",
             )
 
         if user_challenge.status != UserChallengeStatusEnum.ACTIVE:
