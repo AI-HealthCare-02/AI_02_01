@@ -3,6 +3,8 @@ services:
   redis:
     image: redis:alpine
     container_name: redis
+    # DB 할당: 0=Broker, 1=Backend, 2=ML1 Cache, 3=Pub/Sub → 최소 4개 필요, 16개로 명시
+    command: redis-server --databases 16
     networks:
       - ws
     ports:
@@ -67,7 +69,7 @@ services:
     container_name: ai-worker
     image: ${DOCKER_USER}/${DOCKER_REPOSITORY}:ai-${AI_WORKER_VERSION}  # AI_WORKER_VERSION은 빌드된 이미지의 버전관리를 위함입니다. V1.0.0 형식으로 사용합니다.
     env_file: .env
-    command: uv run celery -A ai.celery_app worker --loglevel=info
+    command: uv run celery -A ai.celery_app worker --loglevel=info --concurrency=4
     restart: always
     mem_limit: 4G
     networks:
