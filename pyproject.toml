@@ -10,7 +10,6 @@ dependencies = [
     "fastapi>=0.128.0",
     "joblib>=1.5.3",
     "langfuse>=4.2.0",
-    "locust>=2.43.4",
     "numpy>=2.4.1",
     "openai>=2.30.0",
     "pandas>=3.0.2",
@@ -44,6 +43,7 @@ app = [
 ]
 dev = [
     "coverage>=7.13.2",
+    "locust>=2.43.4",
     "mypy>=1.19.1",
     "pytest-asyncio>=1.3.0",
     "ruff>=0.14.14",
