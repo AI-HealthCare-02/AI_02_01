@@ -6,12 +6,13 @@ ML1 Celery Task 정의
 import hashlib
 import json
 import logging
+import math
 import os
 
 import redis
 
 from ai.celery_app import celery_app
-from ai.workers.worker import ml1_run
+from ai.workers.worker import ml1_comment, ml1_predict
 
 logger = logging.getLogger(__name__)
 
@@ -29,8 +30,14 @@ PUBSUB_REDIS_URL = os.getenv("REDIS_PUBSUB_URL", _redis_base + "/3")
 cache_redis = redis.from_url(CACHE_REDIS_URL, decode_responses=True)
 pubsub_redis = redis.from_url(PUBSUB_REDIS_URL, decode_responses=True)
 
-# 캐시 TTL: 24시간
+# 캐시 TTL: 24시간 (전체 결과 캐시)
 CACHE_TTL = 86400
+
+# LLM 코멘트 캐시 TTL: 7일 (전체 캐시보다 길게 설정해 재사용률 극대화)
+LLM_CACHE_TTL = 604800
+
+# LLM 프롬프트 버전: prompt.py 변경 시 올려 기존 캐시 무효화
+LLM_PROMPT_VERSION = "v1"
 
 
 def _publish_result(task_id: str, payload: dict) -> None:
@@ -44,9 +51,31 @@ def _publish_result(task_id: str, payload: dict) -> None:
 
 
 def _build_cache_key(user_data: dict, nickname: str, challenge_days: int) -> str:
-    """캐시 키 생성 (입력 데이터의 MD5 해시)"""
+    """전체 결과 캐시 키 생성 (입력 데이터의 MD5 해시)"""
     key_source = json.dumps({"user_data": user_data, "nickname": nickname, "challenge_days": challenge_days}, sort_keys=True)
     return f"ml1:cache:{hashlib.md5(key_source.encode()).hexdigest()}"
+
+
+def _build_llm_cache_key(predict_result: dict, user_data: dict, challenge_days: int) -> str:
+    """LLM 코멘트 캐시 키 생성.
+
+    의학적으로 다른 조언을 유발하는 필드만 포함한다.
+    - 포함: risk_grade, age(5세 버킷), smoke, alco, top_risk_factors, challenge_days(7일 버킷)
+    - 제외: nickname(인사말만 영향), risk_percent(소수점 차이 무의미), heart_age(risk_grade+age에서 파생)
+    """
+    key_source = json.dumps(
+        {
+            "v": LLM_PROMPT_VERSION,
+            "risk_grade": predict_result["risk_grade"],
+            "age_bucket": math.floor(user_data["age"] / 5) * 5,
+            "smoke": user_data["smoke"],
+            "alco": user_data["alco"],
+            "top_risk_factors": sorted(predict_result["top_risk_factors"]),
+            "challenge_bucket": math.floor(challenge_days / 7) * 7,
+        },
+        sort_keys=True,
+    )
+    return f"ml1:llm_cache:{hashlib.md5(key_source.encode()).hexdigest()}"
 
 
 # ──────────────────────────────────────────────
@@ -74,16 +103,54 @@ def analyze_health(self, user_data: dict, nickname: str = "사용자", challenge
     logger.info("ML1 분석 시작 - task_id: %s", task_id)
 
     try:
-        result = ml1_run(user_data, nickname, challenge_days)
+        # Step 1: XGBoost 예측 (< 0.1초)
+        logger.info("XGBoost 예측 시작 - task_id: %s", task_id)
+        predict_result = ml1_predict(user_data)
+        logger.info("XGBoost 예측 완료 - risk_grade: %s, task_id: %s", predict_result["risk_grade"], task_id)
 
-        # 캐시 저장
+        # Step 2: LLM 코멘트 캐시 확인 (risk_grade + 핵심 요인 기준)
+        llm_cache_key = _build_llm_cache_key(predict_result, user_data, challenge_days)
+        cached_comment_raw = cache_redis.get(llm_cache_key)
+
+        if cached_comment_raw:
+            logger.info("LLM 캐시 히트 - risk_grade: %s, task_id: %s", predict_result["risk_grade"], task_id)
+            comment_result = json.loads(cached_comment_raw)
+        else:
+            # Step 3: OpenAI 호출 (4~5초)
+            logger.info("LLM 캐시 미스 - OpenAI 호출 시작, task_id: %s", task_id)
+            user_info = {
+                "nickname": nickname,
+                "age": user_data["age"],
+                "risk_percent": predict_result["risk_percent"],
+                "risk_grade": predict_result["risk_grade"],
+                "heart_age": predict_result["heart_age"],
+                "top_risk_factors": predict_result["top_risk_factors"],
+                "smoke": user_data["smoke"],
+                "alco": user_data["alco"],
+                "challenge_days": challenge_days,
+            }
+            comment_result = ml1_comment(user_info)
+            logger.info("OpenAI 호출 완료 - task_id: %s", task_id)
+
+            # LLM 코멘트 캐시 저장 (TTL 7일)
+            try:
+                cache_redis.setex(llm_cache_key, LLM_CACHE_TTL, json.dumps(comment_result))
+                logger.info("LLM 캐시 저장 완료 - key: %s", llm_cache_key)
+            except Exception as cache_err:
+                logger.warning("LLM 캐시 저장 실패 (무시) - %s", cache_err)
+
+        result = {
+            "ml1_predict": predict_result,
+            "ml1_comment": comment_result,
+        }
+
+        # 전체 결과 캐시 저장 (TTL 24시간, 기존 동작 유지)
         cache_key = _build_cache_key(user_data, nickname, challenge_days)
-        logger.info("cache_key: %s", cache_key)
         try:
             cache_redis.setex(cache_key, CACHE_TTL, json.dumps(result))
-            logger.info("ML1 캐시 저장 완료 - key: %s", cache_key)
+            logger.info("ML1 전체 캐시 저장 완료 - key: %s", cache_key)
         except Exception as cache_err:
-            logger.warning("ML1 캐시 저장 실패 (무시) - %s", cache_err)
+            logger.warning("ML1 전체 캐시 저장 실패 (무시) - %s", cache_err)
 
         result_payload = {
             "status": "success",
@@ -92,7 +159,7 @@ def analyze_health(self, user_data: dict, nickname: str = "사용자", challenge
             "error": None,
         }
 
-        # Pub/Sub 발행 (SSE 구독 중인 클라이언트에 실시간 전달)
+        # Pub/Sub 발행 (롱폴링 대기 중인 클라이언트에 실시간 전달)
         _publish_result(task_id, result_payload)
 
         logger.info("ML1 분석 완료 - task_id: %s", task_id)
