@@ -235,10 +235,11 @@ async def wait_task_result_endpoint(task_id: str) -> Response:
     data = await wait_task_result(task_id)
 
     if data is None:
-        # 타임아웃 → PENDING 반환, 클라이언트가 즉시 재요청
+        # 타임아웃 → 408 반환 (30초 내 AI 분석 미완료)
+        # HTTP 200 + PENDING 대신 408로 반환해야 클라이언트가 상태 코드 레벨에서 명확히 구분 가능
         return Response(
             content=TaskResultResponse(task_id=task_id, status="PENDING", result=None, error=None).model_dump(),
-            status_code=status.HTTP_200_OK,
+            status_code=status.HTTP_408_REQUEST_TIMEOUT,
         )
 
     # 3. 결과 도착 → 즉시 반환
