@@ -3,10 +3,10 @@ AI Worker 통합 모듈
 ML1: XGBoost 위험도 예측 + ChatGPT 건강 코멘트 생성
 """
 
+import asyncio
 import json
 import logging
 import os
-import asyncio
 
 from openai import OpenAI
 

@@ -8,13 +8,62 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.redis import get_redis
 from app.db.databases import get_db_session
 from app.dependencies.security import get_request_user
-from app.dtos.analysis import AnalysisResultResponse, AnalysisTaskResponse, GuestAnalysisRequest
+from app.dtos.analysis import (
+    AnalysisResultResponse,
+    AnalysisTaskResponse,
+    GuestAnalysisRequest,
+    PredictionResultListResponse,
+    PredictionResultResponse,
+)
 from app.models.users import User
 from app.services.analysis import HealthAnalysisService
 from app.utils.pubsub import wait_task_result
 
 # /api/v1/health/analysis 경로의 라우터. AI 건강 분석 API를 담당한다.
 analysis_router = APIRouter(prefix="/health/analysis", tags=["analysis"])
+
+
+@analysis_router.get(
+    "/history",
+    response_model=PredictionResultListResponse,
+    status_code=status.HTTP_200_OK,
+    summary="내 예측 결과 목록 조회",
+    description="로그인한 사용자의 심혈관 위험도 예측 결과 목록을 최신순으로 반환한다. (최대 20건)",
+)
+async def get_prediction_history(
+    user: Annotated[User, Depends(get_request_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    redis: Annotated[Redis, Depends(get_redis)],
+) -> Response:
+    service = HealthAnalysisService(session, redis)
+    items = await service.get_prediction_history(user.id)
+    result = PredictionResultListResponse(
+        items=[PredictionResultResponse.model_validate(item) for item in items],
+        total=len(items),
+    )
+    return Response(result.model_dump(), status_code=status.HTTP_200_OK)
+
+
+@analysis_router.get(
+    "/records/{record_id}/result",
+    response_model=PredictionResultListResponse,
+    status_code=status.HTTP_200_OK,
+    summary="특정 건강검진의 예측 결과 목록 조회",
+    description="건강검진 기록 ID로 해당 기록에 대한 심혈관 위험도 예측 결과 목록을 반환한다.",
+)
+async def get_prediction_results_by_record(
+    record_id: int,
+    user: Annotated[User, Depends(get_request_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    redis: Annotated[Redis, Depends(get_redis)],
+) -> Response:
+    service = HealthAnalysisService(session, redis)
+    items = await service.get_prediction_result_by_record(record_id, user)
+    result = PredictionResultListResponse(
+        items=[PredictionResultResponse.model_validate(item) for item in items],
+        total=len(items),
+    )
+    return Response(result.model_dump(), status_code=status.HTTP_200_OK)
 
 
 @analysis_router.post(
@@ -113,13 +162,20 @@ async def wait_analysis_result(
     data = await wait_task_result(task_id)
 
     if data is None:
-        # 타임아웃 → pending 반환, 클라이언트가 즉시 재요청
+        # 타임아웃 → 408 반환 (30초 내 AI 분석 미완료)
+        # HTTP 200 + pending 대신 408로 반환해야 클라이언트가 상태 코드 레벨에서 명확히 구분 가능
         return Response(
             AnalysisResultResponse(status="pending").model_dump(),
-            status_code=status.HTTP_200_OK,
+            status_code=status.HTTP_408_REQUEST_TIMEOUT,
         )
 
-    # 3. 결과 도착 → 즉시 반환
+    # 3. 결과 도착 → Celery backend에서 재조회하여 DB 저장 후 반환
+    #    (Pub/Sub으로 받은 데이터와 동일하나, _persist_prediction_result 트리거 목적)
+    final_result = await service.get_analysis_result(task_id)
+    if final_result.status != "pending":
+        return Response(final_result.model_dump(), status_code=status.HTTP_200_OK)
+
+    # Celery backend 반영 지연 방어: Pub/Sub 데이터를 직접 반환
     return Response(
         AnalysisResultResponse(
             status=data.get("status", "failed"),

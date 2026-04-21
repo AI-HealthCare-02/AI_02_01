@@ -42,10 +42,10 @@ class PredictionResult(Base):
         Enum(RiskLevelEnum, values_callable=lambda x: [e.value for e in x]),
         nullable=False, comment="low / moderate / medium / high / very_high"
     )
-    top_risk_factors: Mapped[dict | None] = mapped_column(JSON, nullable=True, comment="SHAP 기반 위험 요인 상위 3개")
+    top_risk_factors: Mapped[list | None] = mapped_column(JSON, nullable=True, comment="SHAP 기반 위험 요인 상위 3개")
     ai_evaluation: Mapped[str | None] = mapped_column(Text, nullable=True, comment="ChatGPT 수치 평가 코멘트")
     ai_alert: Mapped[str | None] = mapped_column(Text, nullable=True, comment="ChatGPT 위험 경고 (없으면 null)")
-    ai_missions: Mapped[dict | None] = mapped_column(JSON, nullable=True, comment="ChatGPT 추천 챌린지 3개")
+    ai_missions: Mapped[list | None] = mapped_column(JSON, nullable=True, comment="ChatGPT 추천 챌린지 3개")
     ai_encouragement: Mapped[str | None] = mapped_column(Text, nullable=True, comment="ChatGPT 동기부여 문장")
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now(), comment="생성 시각"

@@ -9,6 +9,7 @@ dependencies = [
     "cryptography>=46.0.3",
     "fastapi>=0.128.0",
     "joblib>=1.5.3",
+    "langfuse>=4.2.0",
     "numpy>=2.4.1",
     "openai>=2.30.0",
     "pandas>=3.0.2",
@@ -47,6 +48,7 @@ app = [
 ]
 dev = [
     "coverage>=7.13.2",
+    "locust>=2.43.4",
     "mypy>=1.19.1",
     "pytest-asyncio>=1.3.0",
     "ruff>=0.14.14",
@@ -54,10 +56,6 @@ dev = [
     "types-python-dateutil>=2.9.0.20260124",
 ]
 
-[[tool.uv.index]]
-name = "pytorch-cpu"
-url = "https://download.pytorch.org/whl/cpu"
-explicit = true
 
 [tool.aerich]
 tortoise_orm = "app.db.databases.TORTOISE_ORM"

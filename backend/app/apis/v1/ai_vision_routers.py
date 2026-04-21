@@ -13,7 +13,7 @@ ML2 Vision API 라우터 — 식단 분석 / 운동 캡처 인증 엔드포인�
 import base64
 from typing import Annotated
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import JSONResponse as Response
 
 from app.dtos.ai_vision import (
@@ -23,6 +23,8 @@ from app.dtos.ai_vision import (
 )
 from app.services.ai_vision_service import AIVisionService
 from app.utils.pubsub import wait_task_result
+from app.dependencies.security import get_request_user
+from app.models.users import User
 
 # 허용 MIME 타입 (OpenAI Vision API 지원 형식)
 _ALLOWED_MEDIA_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
@@ -80,6 +82,7 @@ def _validate_and_encode(image: UploadFile, image_bytes: bytes) -> tuple[str, st
 )
 async def analyze_meal_free(
     image: Annotated[UploadFile, File(description="식단 이미지 파일 (JPEG, PNG, WebP, GIF)")],
+    current_user: Annotated[User, Depends(get_request_user)],
     risk_factors: Annotated[str, Form(description="사용자 위험 요인 (예: 고혈압, 당뇨)")] = "",
 ) -> Response:
     image_bytes = await image.read()
@@ -118,9 +121,10 @@ async def analyze_meal_free(
 )
 async def analyze_meal_paid(
     image: Annotated[UploadFile, File(description="식단 이미지 파일 (JPEG, PNG, WebP, GIF)")],
+    current_user: Annotated[User, Depends(get_request_user)],
     risk_factors: Annotated[str, Form(description="사용자 위험 요인 (예: 고혈압, 당뇨)")] = "",
 ) -> Response:
-    # TODO: 포인트 차감 로직 추가 (user_id 필요 → 인증 미들웨어 연결 후)
+    # TODO: 포인트 차감 로직 추가 (current_user.id 사용)
     image_bytes = await image.read()
     image_base64, media_type = _validate_and_encode(image, image_bytes)
 
@@ -160,6 +164,7 @@ async def analyze_meal_paid(
 )
 async def analyze_exercise(
     image: Annotated[UploadFile, File(description="운동 앱 스크린샷 파일 (JPEG, PNG, WebP, GIF)")],
+    current_user: Annotated[User, Depends(get_request_user)],
 ) -> Response:
     image_bytes = await image.read()
     image_base64, media_type = _validate_and_encode(image, image_bytes)
@@ -235,10 +240,11 @@ async def wait_task_result_endpoint(task_id: str) -> Response:
     data = await wait_task_result(task_id)
 
     if data is None:
-        # 타임아웃 → PENDING 반환, 클라이언트가 즉시 재요청
+        # 타임아웃 → 408 반환 (30초 내 AI 분석 미완료)
+        # HTTP 200 + PENDING 대신 408로 반환해야 클라이언트가 상태 코드 레벨에서 명확히 구분 가능
         return Response(
             content=TaskResultResponse(task_id=task_id, status="PENDING", result=None, error=None).model_dump(),
-            status_code=status.HTTP_200_OK,
+            status_code=status.HTTP_408_REQUEST_TIMEOUT,
         )
 
     # 3. 결과 도착 → 즉시 반환
