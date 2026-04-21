@@ -26,15 +26,63 @@ def ml1_predict(user_data: dict) -> dict:
 
 # ── ML1 LLM 코멘트 함수
 def ml1_comment(user_info: dict) -> dict:
-    from langfuse import Langfuse
-    from langfuse.openai import openai as langfuse_openai
+    """
+    위험도 결과 → 건강 코멘트 생성.
+    Celery prefork 환경에서 fork-safety 문제 방지를 위해
+    OpenAI 클라이언트를 함수 내부에서 생성.
 
-    langfuse = Langfuse(
-        public_key=os.getenv("LANGFUSE_PUBLIC_KEY"),
-        secret_key=os.getenv("LANGFUSE_SECRET_KEY"),
-        host=os.getenv("LANGFUSE_HOST", "http://localhost:3000")
+    Langfuse 로깅:
+    - LANGFUSE_PUBLIC_KEY가 설정된 경우에만 활성화
+    - 미설정 환경에서는 기본 OpenAI 클라이언트로 폴백
+    """
+    langfuse_public_key = os.getenv("LANGFUSE_PUBLIC_KEY")
+    use_langfuse = False
+
+    if langfuse_public_key:
+        try:
+            from langfuse.openai import openai as langfuse_openai
+            client = langfuse_openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"), timeout=60)
+            use_langfuse = True
+            logger.info("Langfuse 클라이언트 초기화 완료")
+        except Exception as e:
+            logger.warning("Langfuse 초기화 실패, 기본 OpenAI 클라이언트로 폴백 - %s", e)
+            client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"), timeout=60)
+    else:
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"), timeout=60)
+        logger.info("Langfuse 미설정, 기본 OpenAI 클라이언트 사용")
+
+    user_prompt = build_user_prompt(user_info)
+
+    logger.info("OpenAI API 호출 시작")
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ],
+        temperature=0,
+        timeout=60,
     )
-    client = langfuse_openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"), timeout=60)
+    logger.info("OpenAI API 호출 완료")
+
+    raw = response.choices[0].message.content
+
+    if use_langfuse:
+        try:
+            from langfuse import Langfuse
+            Langfuse().flush()
+        except Exception:
+            pass
+
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return {
+            "evaluation": "건강 데이터를 분석했습니다.",
+            "alert": None,
+            "missions": [],
+            "encouragement": "오늘도 건강한 하루 보내세요!",
+        }
 
 
 # ── ML1 통합 실행 함수
