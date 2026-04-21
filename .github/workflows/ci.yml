@@ -57,12 +57,7 @@ jobs:
       - name: Install ML dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pytest
-          if [ -f "requirements.txt" ]; then
-            pip install -r requirements.txt
-          else
-            cd .. && pip install .
-          fi
+          pip install pytest openai celery redis
 
       - name: AI Logic Check
         run: |
