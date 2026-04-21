@@ -47,3 +47,4 @@ htmlcov/
 # ── 기타 ──────────────────────────────────
 *.log
 mlruns/
+ai/vision/test_images/*.jpg
