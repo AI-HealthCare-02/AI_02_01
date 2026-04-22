@@ -16,8 +16,8 @@ from openai import OpenAI
 
 logger = logging.getLogger(__name__)
 
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-_redis_base = REDIS_URL.rsplit("/", 1)[0]
+_broker = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
+_redis_base = _broker.rsplit("/", 1)[0]
 EMBED_REDIS_URL = os.getenv("REDIS_EMBED_URL", _redis_base + "/4")
 
 embed_redis = redis.from_url(EMBED_REDIS_URL, decode_responses=True)
