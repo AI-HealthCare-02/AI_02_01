@@ -119,7 +119,8 @@ MEAL_PAID_PROMPT = """당신은 영양 상담사입니다.
     ],
     "next_meal_suggestion": {
         "concept": "다음 끼니 추천",
-        "menu_example": ["완성된 한식 메뉴명 (예: 현미밥 + 닭가슴살 구이 + 된장국)", "메뉴2"]
+        "menu_example": ["완성된 한식 메뉴명 (예: 현미밥 + 닭가슴살 구이 + 된장국)", "메뉴2"],
+        "reason": "이 식사를 추천하는 이유 (1문장)"
     },
     "overall_score": 0,
     "feedback_summary": "맞춤 코칭 메시지 (4~5문장)"
