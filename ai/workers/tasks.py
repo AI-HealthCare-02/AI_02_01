@@ -209,3 +209,74 @@ def recalculate_health(self, user_data: dict, completed_challenges: list, nickna
     except Exception as exc:
         logger.error("ML1 재계산 실패 - task_id: %s, error: %s", task_id, exc)
         raise self.retry(exc=exc) from exc
+
+
+# ──────────────────────────────────────────────
+# RAG 챌린지 추천 Celery Task
+# ──────────────────────────────────────────────
+@celery_app.task(
+    name="ml1.recommend_challenges",
+    bind=True,
+    max_retries=2,
+    default_retry_delay=5,
+)
+def recommend_challenges(
+    self,
+    user_profile: dict,
+    prediction: dict,
+    challenges: list,
+    active_challenge_ids: list,
+    completed_challenge_ids: list,
+) -> dict:
+    """
+    RAG 기반 챌린지 추천
+
+    Args:
+        user_profile: {nickname, age, gender}
+        prediction: {top_risk_factors, risk_level, risk_percent, cvd_age}
+        challenges: 전체 챌린지 목록 [{id, title, category, target_risk_factors, expected_effect, description}]
+        active_challenge_ids: 현재 참여 중인 챌린지 ID
+        completed_challenge_ids: 완료한 챌린지 ID
+
+    Returns:
+        {status, task_id, data: [{challenge_id, title, reason}], error}
+    """
+    from ai.workers.recommender import embed_and_store_challenges, generate_recommendations, retrieve_top_k
+
+    task_id = self.request.id
+    logger.info("RAG 챌린지 추천 시작 - task_id: %s", task_id)
+
+    try:
+        # 이미 참여/완료한 챌린지 제외
+        exclude_ids = set(active_challenge_ids + completed_challenge_ids)
+        available = [c for c in challenges if c["id"] not in exclude_ids]
+
+        if not available:
+            result_payload = {"status": "success", "task_id": task_id, "data": [], "error": None}
+            _publish_result(task_id, result_payload)
+            return result_payload
+
+        # Step 1: 챌린지 임베딩 (캐시 없는 것만 새로 생성)
+        new_count = embed_and_store_challenges(available)
+        logger.info("챌린지 임베딩 완료 - 신규: %d개, task_id: %s", new_count, task_id)
+
+        # Step 2: 유저 프로필 임베딩 → 유사도 검색 → Top K
+        top_challenges = retrieve_top_k(user_profile, prediction, available)
+        logger.info("Top %d 챌린지 검색 완료 - task_id: %s", len(top_challenges), task_id)
+
+        # Step 3: GPT 추천 이유 생성
+        recommendations = generate_recommendations(user_profile, prediction, top_challenges)
+        logger.info("GPT 추천 완료 - %d개, task_id: %s", len(recommendations), task_id)
+
+        result_payload = {
+            "status": "success",
+            "task_id": task_id,
+            "data": recommendations,
+            "error": None,
+        }
+        _publish_result(task_id, result_payload)
+        return result_payload
+
+    except Exception as exc:
+        logger.error("RAG 추천 실패 - task_id: %s, error: %s", task_id, exc)
+        raise self.retry(exc=exc) from exc
