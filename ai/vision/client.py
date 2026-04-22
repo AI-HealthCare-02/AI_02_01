@@ -137,6 +137,7 @@ async def call_vision_api(
     model: str = "gpt-4o-mini",
     detail: str = "low",
     max_tokens: int = 1000,
+    temperature: float = 1.0,
 ) -> dict:
     """
     Vision API 호출 → JSON dict 반환
@@ -196,6 +197,7 @@ async def call_vision_api(
                     },
                 ],
                 max_tokens=max_tokens,
+                temperature=temperature,
             )
 
             raw_content = response.choices[0].message.content.strip()
