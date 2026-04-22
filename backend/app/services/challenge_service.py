@@ -12,22 +12,32 @@
 import logging
 from datetime import date, datetime, timedelta
 
+from celery import Celery
+from celery.result import AsyncResult
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
+from app.core.config import Config
 from app.models.challenges import (
     UserChallenge,
     UserChallengeStatusEnum,
     VerificationMethodEnum,
 )
+from app.models.users import User
 from app.repositories.challenge_repository import ChallengeRepository
+from app.repositories.prediction_result_repository import PredictionResultRepository
+from app.dtos.challenge import ChallengeRecommendItem, ChallengeRecommendResponse
+
+_config = Config()
+_celery = Celery(broker=_config.CELERY_BROKER_URL, backend=_config.CELERY_BACKEND_URL)
 
 logger = logging.getLogger(__name__)
 
 
 class ChallengeService:
     def __init__(self, session: AsyncSession):
+        self.session = session
         self.repo = ChallengeRepository(session)
 
     # ══════════════════════════════════════════
@@ -245,3 +255,72 @@ class ChallengeService:
             )
 
         return user_challenge
+
+    # ══════════════════════════════════════════
+    # RAG 챌린지 추천
+    # ══════════════════════════════════════════
+
+    async def recommend_challenges(self, user: User) -> ChallengeRecommendResponse:
+        """
+        RAG 기반 맞춤 챌린지 추천.
+        1. 유저 최신 prediction_result 조회
+        2. 전체 챌린지 + 참여/완료 ID 조회
+        3. Celery 태스크 제출 → 동기 대기 (최대 30초)
+        4. 추천 결과 반환
+        """
+        pred_repo = PredictionResultRepository(self.session)
+        prediction = await pred_repo.get_latest_by_user(user.id)
+        if not prediction:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="AI 건강 분석 결과가 없습니다. 먼저 건강검진 데이터를 분석해주세요.",
+            )
+
+        all_challenges = await self.repo.get_all_challenges()
+        active_ids = await self.repo.get_active_challenge_ids(user.id)
+        completed_ids = await self.repo.get_completed_challenge_ids(user.id)
+
+        age = (date.today().year - user.birth_year) if user.birth_year else None
+        user_profile = {
+            "nickname": user.nickname or "사용자",
+            "age": age,
+            "gender": user.gender or "M",
+        }
+        prediction_data = {
+            "top_risk_factors": prediction.top_risk_factors or [],
+            "risk_level": prediction.risk_level or "",
+            "risk_percent": float(prediction.cvd_risk_percent) if prediction.cvd_risk_percent else None,
+            "cvd_age": prediction.cvd_age,
+        }
+        challenges_data = [
+            {
+                "id": c.id,
+                "title": c.title,
+                "category": c.category or "",
+                "description": c.description or "",
+                "expected_effect": c.expected_effect or "",
+                "target_risk_factors": c.target_risk_factors or "",
+            }
+            for c in all_challenges
+        ]
+
+        task = _celery.send_task(
+            "ml1.recommend_challenges",
+            args=[user_profile, prediction_data, challenges_data, active_ids, completed_ids],
+        )
+
+        try:
+            result = AsyncResult(task.id, app=_celery)
+            payload = result.get(timeout=30)
+        except Exception as exc:
+            logger.error("챌린지 추천 태스크 실패 - user_id: %d, error: %s", user.id, exc)
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="AI 추천 서비스가 응답하지 않습니다. 잠시 후 다시 시도해주세요.",
+            )
+
+        recommendations = [
+            ChallengeRecommendItem(**item)
+            for item in (payload.get("data") or [])
+        ]
+        return ChallengeRecommendResponse(recommendations=recommendations)
