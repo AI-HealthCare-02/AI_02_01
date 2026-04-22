@@ -32,30 +32,24 @@ def ml1_comment(user_info: dict) -> dict:
     OpenAI 클라이언트를 함수 내부에서 생성.
 
     Langfuse 로깅:
-    - LANGFUSE_PUBLIC_KEY가 설정된 경우(로컬 Docker)에만 활성화
-    - EC2 등 Langfuse 미설치 환경에서는 기본 OpenAI 클라이언트로 폴백
+    - LANGFUSE_PUBLIC_KEY가 설정된 경우에만 활성화
+    - 미설정 환경에서는 기본 OpenAI 클라이언트로 폴백
     """
-    # fork된 워커 프로세스마다 독립적인 클라이언트 인스턴스 생성
-    # Langfuse 설정 여부에 따라 클라이언트 선택
     langfuse_public_key = os.getenv("LANGFUSE_PUBLIC_KEY")
+    use_langfuse = False
+
     if langfuse_public_key:
-        logger.info("Langfuse 설정")
         try:
             from langfuse.openai import openai as langfuse_openai
-
-            # langfuse_openai가 환경변수(LANGFUSE_PUBLIC_KEY 등)를 자동으로 읽어 내부 클라이언트 구성
             client = langfuse_openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"), timeout=60)
             use_langfuse = True
             logger.info("Langfuse 클라이언트 초기화 완료")
         except Exception as e:
             logger.warning("Langfuse 초기화 실패, 기본 OpenAI 클라이언트로 폴백 - %s", e)
-            client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-            use_langfuse = False
+            client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"), timeout=60)
     else:
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"), timeout=60)
         logger.info("Langfuse 미설정, 기본 OpenAI 클라이언트 사용")
-        # Langfuse 미설정 환경 (EC2 등): 기본 OpenAI 클라이언트 사용
-        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        use_langfuse = False
 
     user_prompt = build_user_prompt(user_info)
 
@@ -74,8 +68,11 @@ def ml1_comment(user_info: dict) -> dict:
     raw = response.choices[0].message.content
 
     if use_langfuse:
-        # langfuse_openai 내부 클라이언트의 버퍼를 Cloud로 전송
-        langfuse_openai.flush()
+        try:
+            from langfuse import Langfuse
+            Langfuse().flush()
+        except Exception:
+            pass
 
     try:
         return json.loads(raw)

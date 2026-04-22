@@ -107,6 +107,10 @@ async def wait_task_result(task_id: str, timeout: int = LONG_POLL_TIMEOUT_SECOND
         return None
 
     finally:
-        await pubsub.unsubscribe(channel)
-        await redis_client.aclose()
+        # 연결 실패 상태에서도 정리 시도 → 2차 예외가 500으로 전파되는 것을 방지
+        try:
+            await pubsub.unsubscribe(channel)
+            await redis_client.aclose()
+        except Exception as cleanup_exc:
+            logger.warning("롱 폴링 정리 중 오류 (무시) - channel: %s, error: %s", channel, cleanup_exc)
         logger.info("롱 폴링 구독 해제 - channel: %s", channel)

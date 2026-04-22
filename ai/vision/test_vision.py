@@ -1,8 +1,10 @@
+import asyncio
 import base64
 from pathlib import Path
 
 from ai.vision.tasks import analyze_meal_paid
 from ai.vision.tasks import analyze_exercise
+from ai.vision.checkup_service import CheckupService
 
 # IMAGE_PATH = Path("ai/vision/test_images/test.png") # 운동인증
 IMAGE_PATH = Path("ai/vision/test_images/test.jpg") # 식단인증
@@ -36,5 +38,22 @@ def main():
     print(response)
 
 
+async def test_checkup():
+    IMAGE_PATH = Path("ai/vision/test_images/건강검진표2.png")
+
+    if not IMAGE_PATH.exists():
+        print(f"이미지 파일이 없음: {IMAGE_PATH}")
+        return
+
+    with open(IMAGE_PATH, "rb") as f:
+        image_bytes = f.read()
+
+    service = CheckupService()
+    result = await service.analyze(image_bytes, "image/png")
+    print("Result:")
+    print(result)
+
+
 if __name__ == "__main__":
-    main()
+    # main()
+    asyncio.run(test_checkup())

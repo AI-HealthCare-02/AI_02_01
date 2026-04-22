@@ -162,10 +162,11 @@ async def wait_analysis_result(
     data = await wait_task_result(task_id)
 
     if data is None:
-        # 타임아웃 → pending 반환, 클라이언트가 즉시 재요청
+        # 타임아웃 → 408 반환 (30초 내 AI 분석 미완료)
+        # HTTP 200 + pending 대신 408로 반환해야 클라이언트가 상태 코드 레벨에서 명확히 구분 가능
         return Response(
             AnalysisResultResponse(status="pending").model_dump(),
-            status_code=status.HTTP_200_OK,
+            status_code=status.HTTP_408_REQUEST_TIMEOUT,
         )
 
     # 3. 결과 도착 → Celery backend에서 재조회하여 DB 저장 후 반환
