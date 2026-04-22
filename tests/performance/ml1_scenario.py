@@ -98,16 +98,21 @@ SAMPLE_HEALTH_DATA = {
     "exercise_yn": True,
 }
 
-# 캐시 미스 유도용 기본 데이터 (weight는 6단계 태스크 실행 시마다 랜덤 변경)
+# 캐시 미스 유도용 기본 데이터 (3개 필드를 6단계 태스크 실행 시마다 랜덤 변경)
 # → 매 요청마다 다른 캐시 키가 생성되어 항상 캐시 미스가 발생한다.
 # → 7단계에서 EC2 ai-worker의 XGBoost 모델이 실제로 실행된다.
+#
+# [캐시 포화 방지 설계]
+# 캐시 키는 서버에서 (user_data + nickname + challenge_days)의 MD5 해시로 생성된다.
+# 단일 필드만 랜덤화하면 고유 조합이 적어 테스트 도중 캐시가 포화된다.
+#   weight만 변경 (소수점 1자리): 501가지 → 테스트 초반에 포화
+# 3개 필드 동시 랜덤화로 수천만 가지 조합을 생성하여 포화를 방지한다.
+#   weight (소수점 2자리) × systolic_bp × diastolic_bp ≈ 2,067만 가지 조합
 VARIANT_HEALTH_DATA = {
     **SAMPLE_HEALTH_DATA,
     "birth_date": "1974-06-15",
-    "systolic_bp": 150,
-    "diastolic_bp": 95,
     "smoke_yn": True,
-    # weight는 guest_cache_miss_flow에서 random.uniform()으로 덮어씀
+    # systolic_bp, diastolic_bp, weight는 guest_cache_miss_flow에서 랜덤으로 덮어씀
 }
 
 # [2단계] JWT 토큰 (모듈 로드 시 환경변수에서 1회 읽기)
@@ -191,11 +196,19 @@ class ML1AnalysisUser(HttpUser):
     def guest_cache_miss_flow(self) -> None:
         """비회원 분석 캐시 미스 흐름: POST 분석 요청 → GET 롱폴링 대기."""
 
-        # weight를 매번 랜덤으로 변경 → 항상 새로운 캐시 키 생성 → 캐시 미스 보장
+        # 3개 필드를 매번 랜덤으로 변경 → 수천만 가지 캐시 키 생성 → 캐시 미스 보장
         # → 7단계에서 EC2 ai-worker의 XGBoost 모델이 실제로 실행됨
+        #
+        # 고유 조합 수:
+        #   weight (50.00~100.00, 소수점 2자리) : 5,001가지
+        #   systolic_bp (100~180)               :    81가지
+        #   diastolic_bp (60~110)               :    51가지
+        #   합계                                 : 약 2,067만 가지 → 테스트 중 포화 불가
         data = {
             **VARIANT_HEALTH_DATA,
-            "weight": round(random.uniform(50.0, 100.0), 1),
+            "weight": round(random.uniform(50.0, 100.0), 2),
+            "systolic_bp": random.randint(100, 180),
+            "diastolic_bp": random.randint(60, 110),
         }
 
         # ── [6단계 / 7단계] API 호출 1: POST /api/v1/health/analysis/guest ────
