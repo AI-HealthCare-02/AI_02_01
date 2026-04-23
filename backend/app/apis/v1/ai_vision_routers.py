@@ -84,6 +84,7 @@ async def analyze_meal_free(
     image: Annotated[UploadFile, File(description="식단 이미지 파일 (JPEG, PNG, WebP, GIF)")],
     current_user: Annotated[User, Depends(get_request_user)],
     risk_factors: Annotated[str, Form(description="사용자 위험 요인 (예: 고혈압, 당뇨)")] = "",
+    risk_grade: Annotated[str, Form(description="심혈관 위험 등급 (낮음/보통/중간/높음/매우높음)")] = "",
 ) -> Response:
     image_bytes = await image.read()
     image_base64, media_type = _validate_and_encode(image, image_bytes)
@@ -92,6 +93,7 @@ async def analyze_meal_free(
         image_base64=image_base64,
         media_type=media_type,
         risk_factors=risk_factors,
+        risk_grade=risk_grade,
     )
     return Response(
         content=TaskResponse(
@@ -123,6 +125,7 @@ async def analyze_meal_paid(
     image: Annotated[UploadFile, File(description="식단 이미지 파일 (JPEG, PNG, WebP, GIF)")],
     current_user: Annotated[User, Depends(get_request_user)],
     risk_factors: Annotated[str, Form(description="사용자 위험 요인 (예: 고혈압, 당뇨)")] = "",
+    risk_grade: Annotated[str, Form(description="심혈관 위험 등급 (낮음/보통/중간/높음/매우높음)")] = "",
 ) -> Response:
     # TODO: 포인트 차감 로직 추가 (current_user.id 사용)
     image_bytes = await image.read()
@@ -132,6 +135,7 @@ async def analyze_meal_paid(
         image_base64=image_base64,
         media_type=media_type,
         risk_factors=risk_factors,
+        risk_grade=risk_grade,
     )
     return Response(
         content=TaskResponse(

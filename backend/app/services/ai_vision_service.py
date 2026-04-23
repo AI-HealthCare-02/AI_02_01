@@ -45,22 +45,22 @@ class AIVisionService:
     # ── 식단 무료 분석 (+100pt) ──
 
     @staticmethod
-    def enqueue_meal_free(image_base64: str, media_type: str, risk_factors: str = "") -> str:
+    def enqueue_meal_free(image_base64: str, media_type: str, risk_factors: str = "", risk_grade: str = "") -> str:
         """식단 무료 분석 태스크를 큐에 등록하고 task_id를 반환한다."""
         task = _celery_sender.send_task(
             "vision.analyze_meal_free",
-            args=[image_base64, media_type, risk_factors],
+            args=[image_base64, media_type, risk_factors, risk_grade],
         )
         return task.id
 
     # ── 식단 유료 리포트 (-300pt) ──
 
     @staticmethod
-    def enqueue_meal_paid(image_base64: str, media_type: str, risk_factors: str = "") -> str:
+    def enqueue_meal_paid(image_base64: str, media_type: str, risk_factors: str = "", risk_grade: str = "") -> str:
         """식단 유료 상세 리포트 태스크를 큐에 등록하고 task_id를 반환한다."""
         task = _celery_sender.send_task(
             "vision.analyze_meal_paid",
-            args=[image_base64, media_type, risk_factors],
+            args=[image_base64, media_type, risk_factors, risk_grade],
         )
         return task.id
 
