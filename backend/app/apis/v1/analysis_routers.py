@@ -13,6 +13,7 @@ from app.dtos.analysis import (
     AnalysisResultResponse,
     AnalysisTaskResponse,
     GuestAnalysisRequest,
+    MigrateGuestAnalysisRequest,
     PredictionResultListResponse,
     PredictionResultResponse,
 )
@@ -85,6 +86,33 @@ async def request_guest_analysis(
 ) -> Response:
     service = HealthAnalysisService(session, redis)
     result = await service.request_guest_analysis(data)
+    return Response(result.model_dump(), status_code=status.HTTP_200_OK)
+
+
+@analysis_router.post(
+    "/migrate-guest",
+    response_model=AnalysisResultResponse,
+    status_code=status.HTTP_200_OK,
+    summary="게스트 분석 결과 → 회원 계정 이전",
+    description=(
+        "비회원 분석 결과(guest_task_id)를 회원 건강검진 기록(record_id)에 연결하여 DB에 저장한다. "
+        "재분석 없이 기존 결과를 그대로 이전하므로 즉시 반환된다. "
+        "Celery 결과가 만료됐거나 없으면 404를 반환한다."
+    ),
+    responses={
+        200: {"description": "이전 성공", "model": AnalysisResultResponse},
+        403: {"description": "본인 기록이 아님"},
+        404: {"description": "게스트 분석 결과 없음 또는 건강검진 기록 없음"},
+    },
+)
+async def migrate_guest_analysis(
+    data: MigrateGuestAnalysisRequest,
+    user: Annotated[User, Depends(get_request_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    redis: Annotated[Redis, Depends(get_redis)],
+) -> Response:
+    service = HealthAnalysisService(session, redis)
+    result = await service.migrate_guest_analysis(data.guest_task_id, data.record_id, user)
     return Response(result.model_dump(), status_code=status.HTTP_200_OK)
 
 
