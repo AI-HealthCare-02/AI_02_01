@@ -28,10 +28,6 @@ dependencies = [
 [dependency-groups]
 ai = [
     "scikit-learn>=1.8.0",
-    "torch",
-    "torchvision",
-    "torchaudio",
-    "sentence-transformers>=5.2.0",
     "langfuse>=2.0.0",
 ]
 app = [
