@@ -1,13 +1,14 @@
+import json
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import ORJSONResponse as Response
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.redis import get_redis
 from app.db.databases import get_db_session
-from app.dependencies.security import get_request_user
+from app.dependencies.security import get_optional_user, get_request_user
 from app.dtos.analysis import (
     AnalysisResultResponse,
     AnalysisTaskResponse,
@@ -124,7 +125,18 @@ async def get_analysis_result(
     task_id: str,
     session: Annotated[AsyncSession, Depends(get_db_session)],
     redis: Annotated[Redis, Depends(get_redis)],
+    current_user: Annotated[User | None, Depends(get_optional_user)],
 ) -> Response:
+    if current_user is not None:
+        raw_meta = await redis.get(f"ml1:task_meta:{task_id}")
+        if raw_meta:
+            meta = json.loads(raw_meta)
+            task_user_id = meta.get("user_id")
+            if task_user_id is not None and task_user_id != current_user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="본인의 분석 결과만 조회할 수 있습니다.",
+                )
     service = HealthAnalysisService(session, redis)
     result = await service.get_analysis_result(task_id)
     return Response(result.model_dump(), status_code=status.HTTP_200_OK)
@@ -150,7 +162,19 @@ async def wait_analysis_result(
     task_id: str,
     session: Annotated[AsyncSession, Depends(get_db_session)],
     redis: Annotated[Redis, Depends(get_redis)],
+    current_user: Annotated[User | None, Depends(get_optional_user)],
 ) -> Response:
+    if current_user is not None:
+        raw_meta = await redis.get(f"ml1:task_meta:{task_id}")
+        if raw_meta:
+            meta = json.loads(raw_meta)
+            task_user_id = meta.get("user_id")
+            if task_user_id is not None and task_user_id != current_user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="본인의 분석 결과만 조회할 수 있습니다.",
+                )
+
     service = HealthAnalysisService(session, redis)
 
     # 1. 이미 완료된 결과가 있으면 즉시 반환 (Pub/Sub 구독 불필요)

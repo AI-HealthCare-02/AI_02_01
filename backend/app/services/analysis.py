@@ -111,7 +111,7 @@ class HealthAnalysisService:
         logger.info("ML1 분석 task 제출 - user_id: %d, task_id: %s", user.id, task.id)
 
         # 5. task_id → record_id 매핑을 Redis에 저장 (결과 수신 시 DB 저장에 사용)
-        task_meta = json.dumps({"record_id": record_id, "trigger_type": TriggerTypeEnum.NEW_RECORD.value})
+        task_meta = json.dumps({"record_id": record_id, "trigger_type": TriggerTypeEnum.NEW_RECORD.value, "user_id": user.id})
         await self.redis.set(f"ml1:task_meta:{task.id}", task_meta, ex=TASK_META_TTL)
 
         return AnalysisTaskResponse(task_id=task.id, status="pending")
