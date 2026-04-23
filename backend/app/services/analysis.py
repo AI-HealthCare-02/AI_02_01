@@ -164,13 +164,8 @@ class HealthAnalysisService:
         2. guest_task_id로 Celery 결과 조회
         3. prediction_results DB에 저장 후 반환
         """
-        record = await self.repo.get_record(record_id)
-        if not record:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="건강검진 기록을 찾을 수 없습니다.")
-        if record.user_id != user.id:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="본인의 건강검진 기록만 사용할 수 있습니다.")
 
-        result = AsyncResult(guest_task_id, app=_celery_result)
+        result = AsyncResult(id=guest_task_id, app=_celery_result)
         if result.state != "SUCCESS":
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="게스트 분석 결과를 찾을 수 없습니다. 다시 분석해주세요.")
 
