@@ -37,7 +37,8 @@ CACHE_TTL = 86400
 LLM_CACHE_TTL = 604800
 
 # LLM 프롬프트 버전: prompt.py 변경 시 올려 기존 캐시 무효화
-LLM_PROMPT_VERSION = "v1"
+# v2: RAG 적용 프롬프트 도입
+LLM_PROMPT_VERSION = "v2"
 
 
 def _publish_result(task_id: str, payload: dict) -> None:
@@ -52,29 +53,38 @@ def _publish_result(task_id: str, payload: dict) -> None:
 
 def _build_cache_key(user_data: dict, nickname: str, challenge_days: int) -> str:
     """전체 결과 캐시 키 생성 (입력 데이터의 MD5 해시)"""
-    key_source = json.dumps({"user_data": user_data, "nickname": nickname, "challenge_days": challenge_days}, sort_keys=True)
+    key_source = json.dumps(
+        {"user_data": user_data, "nickname": nickname, "challenge_days": challenge_days}, sort_keys=True
+    )
     return f"ml1:cache:{hashlib.md5(key_source.encode()).hexdigest()}"
 
 
-def _build_llm_cache_key(predict_result: dict, user_data: dict, challenge_days: int) -> str:
+def _build_llm_cache_key(
+    predict_result: dict,
+    user_data: dict,
+    challenge_days: int,
+    retrieved_context: str = "",
+) -> str:
     """LLM 코멘트 캐시 키 생성.
 
     의학적으로 다른 조언을 유발하는 필드만 포함한다.
     - 포함: risk_grade, age(5세 버킷), smoke, alco, top_risk_factors, challenge_days(7일 버킷)
     - 제외: nickname(인사말만 영향), risk_percent(소수점 차이 무의미), heart_age(risk_grade+age에서 파생)
+    - RAG 활성화 시: retrieved_context 해시 추가 (검색 문서가 달라지면 캐시 미스)
     """
-    key_source = json.dumps(
-        {
-            "v": LLM_PROMPT_VERSION,
-            "risk_grade": predict_result["risk_grade"],
-            "age_bucket": math.floor(user_data["age"] / 5) * 5,
-            "smoke": user_data["smoke"],
-            "alco": user_data["alco"],
-            "top_risk_factors": sorted(predict_result["top_risk_factors"]),
-            "challenge_bucket": math.floor(challenge_days / 7) * 7,
-        },
-        sort_keys=True,
-    )
+    key_data: dict = {
+        "v": LLM_PROMPT_VERSION,
+        "risk_grade": predict_result["risk_grade"],
+        "age_bucket": math.floor(user_data["age"] / 5) * 5,
+        "smoke": user_data["smoke"],
+        "alco": user_data["alco"],
+        "top_risk_factors": sorted(predict_result["top_risk_factors"]),
+        "challenge_bucket": math.floor(challenge_days / 7) * 7,
+    }
+    if retrieved_context:
+        key_data["rag_hash"] = hashlib.md5(retrieved_context.encode()).hexdigest()[:8]
+
+    key_source = json.dumps(key_data, sort_keys=True)
     return f"ml1:llm_cache:{hashlib.md5(key_source.encode()).hexdigest()}"
 
 
@@ -103,33 +113,58 @@ def analyze_health(self, user_data: dict, nickname: str = "사용자", challenge
     logger.info("ML1 분석 시작 - task_id: %s", task_id)
 
     try:
+        from ai.core import config as ai_config
+
         # Step 1: XGBoost 예측 (< 0.1초)
         logger.info("XGBoost 예측 시작 - task_id: %s", task_id)
         predict_result = ml1_predict(user_data)
         logger.info("XGBoost 예측 완료 - risk_grade: %s, task_id: %s", predict_result["risk_grade"], task_id)
 
-        # Step 2: LLM 코멘트 캐시 확인 (risk_grade + 핵심 요인 기준)
-        llm_cache_key = _build_llm_cache_key(predict_result, user_data, challenge_days)
+        user_info = {
+            "nickname": nickname,
+            "age": user_data["age"],
+            "risk_percent": predict_result["risk_percent"],
+            "risk_grade": predict_result["risk_grade"],
+            "heart_age": predict_result["heart_age"],
+            "top_risk_factors": predict_result["top_risk_factors"],
+            "smoke": user_data["smoke"],
+            "alco": user_data["alco"],
+            "challenge_days": challenge_days,
+        }
+
+        # Step 2: RAG 컨텍스트 검색 (+0.3~0.5초)
+        retrieved_context = ""
+        if ai_config.RAG_ENABLED:
+            try:
+                from ai.rag.retriever import build_rag_query, format_context_for_prompt, retrieve_health_context
+
+                rag_query = build_rag_query(user_info)
+                rag_chunks = retrieve_health_context(rag_query, predict_result["risk_grade"])
+                retrieved_context = format_context_for_prompt(rag_chunks)
+                logger.info(
+                    "RAG 검색 완료 - %d개 청크 검색됨, task_id: %s",
+                    len(rag_chunks),
+                    task_id,
+                )
+            except Exception as rag_err:
+                # RAG 실패 시 기본 방식으로 폴백 (서비스 중단 방지)
+                logger.warning("RAG 검색 실패, 기본 프롬프트로 폴백 - %s", rag_err)
+
+        # Step 3: LLM 코멘트 캐시 확인 (risk_grade + 핵심 요인 + RAG 해시 기준)
+        llm_cache_key = _build_llm_cache_key(predict_result, user_data, challenge_days, retrieved_context)
         cached_comment_raw = cache_redis.get(llm_cache_key)
 
         if cached_comment_raw:
             logger.info("LLM 캐시 히트 - risk_grade: %s, task_id: %s", predict_result["risk_grade"], task_id)
             comment_result = json.loads(cached_comment_raw)
         else:
-            # Step 3: OpenAI 호출 (4~5초)
-            logger.info("LLM 캐시 미스 - OpenAI 호출 시작, task_id: %s", task_id)
-            user_info = {
-                "nickname": nickname,
-                "age": user_data["age"],
-                "risk_percent": predict_result["risk_percent"],
-                "risk_grade": predict_result["risk_grade"],
-                "heart_age": predict_result["heart_age"],
-                "top_risk_factors": predict_result["top_risk_factors"],
-                "smoke": user_data["smoke"],
-                "alco": user_data["alco"],
-                "challenge_days": challenge_days,
-            }
-            comment_result = ml1_comment(user_info)
+            # Step 4: OpenAI 호출 (4~5초)
+            logger.info(
+                "LLM 캐시 미스 - OpenAI 호출 시작 (RAG=%s), task_id: %s",
+                bool(retrieved_context),
+                task_id,
+            )
+            comment_result = ml1_comment(user_info, retrieved_context)
             logger.info("OpenAI 호출 완료 - task_id: %s", task_id)
 
             # LLM 코멘트 캐시 저장 (TTL 7일)
@@ -139,10 +174,19 @@ def analyze_health(self, user_data: dict, nickname: str = "사용자", challenge
             except Exception as cache_err:
                 logger.warning("LLM 캐시 저장 실패 (무시) - %s", cache_err)
 
-        result = {
+        # Step 5: RAG 비교 모드 (RAG_COMPARE=true일 때 기본 응답도 함께 반환)
+        result: dict = {
             "ml1_predict": predict_result,
             "ml1_comment": comment_result,
         }
+
+        if ai_config.RAG_ENABLED and retrieved_context:
+            result["rag_context"] = retrieved_context
+
+        if ai_config.RAG_COMPARE and ai_config.RAG_ENABLED and retrieved_context:
+            logger.info("RAG 비교 모드 활성화 - 기본 프롬프트 추가 호출, task_id: %s", task_id)
+            baseline_comment = ml1_comment(user_info, "")
+            result["ml1_comment_baseline"] = baseline_comment
 
         # 전체 결과 캐시 저장 (TTL 24시간, 기존 동작 유지)
         cache_key = _build_cache_key(user_data, nickname, challenge_days)
@@ -168,7 +212,8 @@ def analyze_health(self, user_data: dict, nickname: str = "사용자", challenge
     except Exception as exc:
         logger.error("ML1 분석 실패 (retry 시도) - task_id: %s, error: %s", task_id, exc)
         raise self.retry(exc=exc) from exc
-    
+
+
 # ──────────────────────────────────────────────
 # ML1 챌린지 달성 후 재계산 Celery Task
 # ──────────────────────────────────────────────
