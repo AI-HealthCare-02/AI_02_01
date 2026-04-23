@@ -142,3 +142,23 @@ class ChallengeRepository:
             )
         )
         return result.scalar() or 0
+
+    async def get_active_challenge_ids(self, user_id: int) -> list[int]:
+        """유저가 현재 참여 중인 챌린지 ID 목록"""
+        result = await self.session.execute(
+            select(UserChallenge.challenge_id).where(
+                UserChallenge.user_id == user_id,
+                UserChallenge.status == UserChallengeStatusEnum.ACTIVE,
+            )
+        )
+        return list(result.scalars().all())
+
+    async def get_completed_challenge_ids(self, user_id: int) -> list[int]:
+        """유저가 완료한 챌린지 ID 목록"""
+        result = await self.session.execute(
+            select(UserChallenge.challenge_id).where(
+                UserChallenge.user_id == user_id,
+                UserChallenge.status == UserChallengeStatusEnum.COMPLETED,
+            )
+        )
+        return list(result.scalars().all())

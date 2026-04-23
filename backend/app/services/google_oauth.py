@@ -54,11 +54,15 @@ class GoogleOAuthService:
                 self.GOOGLE_USERINFO_URL,
                 headers={"Authorization": f"Bearer {access_token}"},
             )
-
         if response.status_code != 200:
             raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Google 사용자 정보를 가져올 수 없습니다.",
-            )
-
-        return GoogleUserInfo(**response.json())
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Google ID 토큰이 유효하지 않습니다.",
+        )
+        data = response.json()
+        return GoogleUserInfo(
+            sub=data["sub"],
+            name=data.get("name", ""),
+            email=data.get("email"),
+            picture=data.get("picture"),
+        )

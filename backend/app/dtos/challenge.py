@@ -94,3 +94,15 @@ class MessageResponse(BaseModel):
 class ErrorResponse(BaseModel):
     """에러 응답 공통 형식"""
     detail: str
+
+
+class ChallengeRecommendItem(BaseModel):
+    """AI 추천 챌린지 단건"""
+    challenge_id: int
+    title: str
+    reason: str
+
+
+class ChallengeRecommendResponse(BaseModel):
+    """AI 챌린지 추천 응답"""
+    recommendations: list[ChallengeRecommendItem]

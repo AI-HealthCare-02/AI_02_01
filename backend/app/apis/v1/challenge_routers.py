@@ -21,6 +21,7 @@ from app.dtos.challenge import (
     ChallengeListResponse,
     ChallengeLogRequest,
     ChallengeLogResponse,
+    ChallengeRecommendResponse,
     ChallengeResponse,
     ErrorResponse,
     MessageResponse,
@@ -204,4 +205,34 @@ async def log_daily(
             created_at=log.created_at,
         ).model_dump(mode="json"),
         status_code=status.HTTP_201_CREATED,
+    )
+
+
+# ══════════════════════════════════════════════
+# 5. AI 맞춤 챌린지 추천
+# ══════════════════════════════════════════════
+
+@challenge_router.get(
+    "/recommend",
+    response_model=ChallengeRecommendResponse,
+    status_code=status.HTTP_200_OK,
+    summary="AI 맞춤 챌린지 추천",
+    description="RAG 기반으로 사용자의 건강 데이터를 분석하여 "
+                "맞춤 챌린지 Top 3를 추천합니다. "
+                "AI 건강 분석 결과가 없으면 404를 반환합니다.",
+    responses={
+        200: {"description": "추천 성공", "model": ChallengeRecommendResponse},
+        404: {"description": "AI 분석 결과 없음", "model": ErrorResponse},
+        503: {"description": "AI 추천 서비스 응답 없음", "model": ErrorResponse},
+    },
+)
+async def recommend_challenges(
+    current_user: Annotated[User, Depends(get_request_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> Response:
+    service = ChallengeService(session)
+    result = await service.recommend_challenges(current_user)
+    return Response(
+        content=result.model_dump(),
+        status_code=status.HTTP_200_OK,
     )

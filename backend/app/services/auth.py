@@ -62,15 +62,14 @@ class AuthService:
         )
 
     async def _google_login(self, code: str) -> LoginResult:
-        """Google OAuth 인가 코드로 로그인/회원가입 처리"""
+        """Google ID 토큰으로 로그인/회원가입 처리"""
         google_oauth = GoogleOAuthService()
 
-        logger.info("Google 인가 코드 교환 시작")
+        logger.info("Google ID 토큰 검증 시작")
         token_data = await google_oauth.exchange_code(code)
-        logger.info("Google 인가 코드 교환 성공")
-
         google_user: GoogleUserInfo = await google_oauth.get_user_info(token_data["access_token"])
-        logger.info("Google 사용자 정보 조회 성공 - sub: %s, name: %s", google_user.sub, google_user.name)
+        logger.info("Google ID 토큰 검증 성공")
+
 
         user = await self.user_repo.get_user_by_provider_id("google", google_user.sub)
         is_new_user = False

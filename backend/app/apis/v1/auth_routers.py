@@ -1,7 +1,9 @@
 from typing import Annotated
+from urllib.parse import urlencode
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse as Response
+from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import config
@@ -20,34 +22,40 @@ from app.services.jwt import JwtService
 # /api/v1/auth 경로의 라우터. tags=["auth"]는 Swagger에서 그룹명으로 표시된다.
 auth_router = APIRouter(prefix="/auth", tags=["auth"])
 
+GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
+
+
+@auth_router.get(
+    "/google/login",
+    summary="Google 로그인 시작",
+    description="Google OAuth2 인증 페이지로 리다이렉트합니다.",
+)
+async def google_login() -> RedirectResponse:
+    params = {
+        "client_id": config.GOOGLE_CLIENT_ID,
+        "redirect_uri": config.GOOGLE_REDIRECT_URI,
+        "response_type": "code",
+        "scope": "openid email profile",
+        "access_type": "offline",
+    }
+    import logging
+    logging.getLogger(__name__).info("Google login redirect_uri: %s", config.GOOGLE_REDIRECT_URI)
+    return RedirectResponse(f"{GOOGLE_AUTH_URL}?{urlencode(params)}")
+
 
 @auth_router.post(
-    "/login/{provider}",
+    "/login/google",
     response_model=SocialLoginResponse,
-    summary="소셜 로그인 및 회원가입 통합 API",
-    description="소셜 로그인 제공자(google 등)의 인가 코드를 받아 로그인/회원가입을 처리합니다.",
-    responses={
-        200: {"description": "기존 회원 로그인 성공", "model": SocialLoginResponse},
-        201: {"description": "신규 회원가입 성공", "model": SocialLoginResponse},
-        400: {"description": "지원하지 않는 provider 또는 유효하지 않은 인가 코드", "model": ErrorResponse},
-        422: {"description": "요청 데이터 형식 오류 (code 필드 누락 등)"},
-        423: {"description": "비활성화된(탈퇴한) 계정", "model": ErrorResponse},
-        502: {"description": "Google 서버 통신 오류", "model": ErrorResponse},
-    },
+    summary="Google 로그인 처리",
 )
-async def social_login(
-    provider: str,  # URL 경로에서 받는 소셜 제공자 (예: "google")
-    request: SocialLoginRequest,  # 요청 body에서 인가 코드(code)를 받음
-    session: Annotated[AsyncSession, Depends(get_db_session)],  # DB 세션 자동 주입
+async def google_login_post(
+    request: SocialLoginRequest,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> Response:
-    # AuthService에 DB 세션을 전달하여 로그인/회원가입 처리
     auth_service = AuthService(session)
-    result = await auth_service.social_login(provider=provider, code=request.code)
+    result = await auth_service.social_login(provider="google", code=request.code)
 
-    # 신규 가입 → 201 Created, 기존 로그인 → 200 OK
     response_status = status.HTTP_201_CREATED if result.is_new_user else status.HTTP_200_OK
-
-    # 응답 body: access_token + is_new_user + 사용자 정보
     resp = Response(
         content=SocialLoginResponse(
             is_new_user=result.is_new_user,
@@ -56,17 +64,51 @@ async def social_login(
         ).model_dump(),
         status_code=response_status,
     )
-
-    # refresh_token은 httponly 쿠키에 저장 → JS에서 접근 불가하여 XSS 공격 방지
     resp.set_cookie(
         key="refresh_token",
         value=str(result.tokens["refresh_token"]),
-        httponly=True,  # JavaScript에서 쿠키 접근 차단
-        secure=True if config.ENV == Env.PROD else False,  # 운영 환경에서만 HTTPS 필수
+        httponly=True,
+        secure=True if config.ENV == Env.PROD else False,
         domain=config.COOKIE_DOMAIN or None,
         expires=result.tokens["access_token"].payload["exp"],
     )
     return resp
+
+
+@auth_router.get(
+    "/google/callback",
+    summary="Google OAuth2 콜백",
+    description="Google이 인가 코드와 함께 리다이렉트하는 엔드포인트입니다.",
+)
+async def google_callback(
+    request: Request,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> RedirectResponse:
+    code = request.query_params.get("code")
+    if not code:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="인가 코드가 없습니다.")
+
+    auth_service = AuthService(session)
+    result = await auth_service.social_login(provider="google", code=code)
+
+    params = urlencode({
+        "access_token": str(result.tokens["access_token"]),
+        "is_new_user": str(result.is_new_user).lower(),
+        "user_id": result.user.id,
+        "email": result.user.email or "",
+        "name": result.user.nickname or "",
+        "picture": result.user.profile_image or "",
+    })
+    redirect = RedirectResponse(f"{config.FRONTEND_URL}/login/callback?{params}")
+    redirect.set_cookie(
+        key="refresh_token",
+        value=str(result.tokens["refresh_token"]),
+        httponly=True,
+        secure=True if config.ENV == Env.PROD else False,
+        domain=config.COOKIE_DOMAIN or None,
+        expires=result.tokens["access_token"].payload["exp"],
+    )
+    return redirect
 
 
 @auth_router.get(
