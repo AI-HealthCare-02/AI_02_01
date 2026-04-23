@@ -111,7 +111,7 @@ class HealthAnalysisService:
         logger.info("ML1 분석 task 제출 - user_id: %d, task_id: %s", user.id, task.id)
 
         # 5. task_id → record_id 매핑을 Redis에 저장 (결과 수신 시 DB 저장에 사용)
-        task_meta = json.dumps({"record_id": record_id, "trigger_type": TriggerTypeEnum.NEW_RECORD.value})
+        task_meta = json.dumps({"record_id": record_id, "trigger_type": TriggerTypeEnum.NEW_RECORD.value, "user_id": user.id})
         await self.redis.set(f"ml1:task_meta:{task.id}", task_meta, ex=TASK_META_TTL)
 
         return AnalysisTaskResponse(task_id=task.id, status="pending")
@@ -156,6 +156,39 @@ class HealthAnalysisService:
         logger.info("ML1 분석 task 제출 (비회원) - task_id: %s", task.id)
 
         return AnalysisTaskResponse(task_id=task.id, status="pending")
+
+    async def migrate_guest_analysis(self, guest_task_id: str, record_id: int, user: User) -> AnalysisResultResponse:
+        """
+        게스트 분석 결과를 회원 계정으로 이전.
+        1. record_id 소유권 검증
+        2. guest_task_id로 Celery 결과 조회
+        3. prediction_results DB에 저장 후 반환
+        """
+        record = await self.repo.get_record(record_id)
+        if not record:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="건강검진 기록을 찾을 수 없습니다.")
+        if record.user_id != user.id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="본인의 건강검진 기록만 사용할 수 있습니다.")
+
+        result = AsyncResult(guest_task_id, app=_celery_result)
+        if result.state != "SUCCESS":
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="게스트 분석 결과를 찾을 수 없습니다. 다시 분석해주세요.")
+
+        task_result = result.result
+        data = task_result.get("data") if isinstance(task_result, dict) else None
+        if not data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="게스트 분석 결과 데이터가 없습니다.")
+
+        task_meta = json.dumps({
+            "record_id": record_id,
+            "trigger_type": TriggerTypeEnum.NEW_RECORD.value,
+            "user_id": user.id,
+        })
+        await self.redis.set(f"ml1:task_meta:{guest_task_id}", task_meta, ex=TASK_META_TTL)
+        await self._persist_prediction_result(guest_task_id, data)
+        logger.info("게스트 분석 결과 회원 이전 완료 - user_id: %d, record_id: %d", user.id, record_id)
+
+        return AnalysisResultResponse(status="success", data=data)
 
     async def get_analysis_result(self, task_id: str) -> AnalysisResultResponse:
         """
