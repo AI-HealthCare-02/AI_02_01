@@ -170,6 +170,29 @@ def _run_vision_task(self, task_name: str, image_base64: str, media_type: str, s
 # 4. Task 정의
 # ══════════════════════════════════════════════
 
+def _retrieve_nutrition_context(risk_grade: str, risk_factors: str) -> str:
+    """
+    nutrition_knowledge 컬렉션에서 RAG 검색을 수행하고 포맷된 컨텍스트를 반환한다.
+
+    risk_grade가 없으면 필터 없이 전체 문서에서 검색한다.
+    실패 시 빈 문자열을 반환하여 서비스 중단을 방지한다.
+    """
+    try:
+        from ai.core import config
+        from ai.rag.retriever import build_nutrition_rag_query, format_context_for_prompt, retrieve_health_context
+
+        rag_query = build_nutrition_rag_query(risk_grade, risk_factors)
+        rag_chunks = retrieve_health_context(
+            query=rag_query,
+            risk_grade=risk_grade,
+            collection=config.QDRANT_COLLECTION_NUTRITION,
+        )
+        return format_context_for_prompt(rag_chunks)
+    except Exception as e:
+        logger.warning("영양 RAG 검색 실패 (무시): %s", e)
+        return ""
+
+
 # ── Task 1: 식단 무료 분석 ──
 @celery_app.task(
     name="vision.analyze_meal_free",
@@ -177,16 +200,20 @@ def _run_vision_task(self, task_name: str, image_base64: str, media_type: str, s
     max_retries=2,
     default_retry_delay=5,
 )
-def analyze_meal_free(self, image_base64: str, media_type: str, risk_factors: str = ""):
+def analyze_meal_free(self, image_base64: str, media_type: str, risk_factors: str = "", risk_grade: str = ""):
     """
     식단 무료 분석 (+100pt)
 
     FastAPI에서 호출:
         from ai.vision.tasks import analyze_meal_free
-        task = analyze_meal_free.delay(image_base64, media_type, risk_factors)
+        task = analyze_meal_free.delay(image_base64, media_type, risk_factors, risk_grade)
         result = task.get()  # 또는 task.id로 상태 조회
     """
-    return _run_vision_task(
+    # RAG 컨텍스트 검색 (risk_grade 없으면 필터 없이 전체 검색)
+    rag_context = _retrieve_nutrition_context(risk_grade, risk_factors)
+
+    # RAG 적용 결과
+    response = _run_vision_task(
         self=self,
         task_name="식단_무료_분석",
         image_base64=image_base64,
@@ -195,8 +222,31 @@ def analyze_meal_free(self, image_base64: str, media_type: str, risk_factors: st
             image_bytes=img_bytes,
             media_type=media_type,
             risk_factors=risk_factors,
+            rag_context=rag_context,
         ),
     )
+
+    if response.get("status") == "success" and response.get("data"):
+        response["data"]["rag_applied"] = bool(rag_context)
+
+        # RAG_COMPARE 모드: 기본 응답도 동시 반환
+        from ai.core import config
+        if config.RAG_COMPARE and rag_context:
+            try:
+                baseline = asyncio.run(
+                    meal_service.analyze_free(
+                        image_bytes=base64.b64decode(image_base64),
+                        media_type=media_type,
+                        risk_factors=risk_factors,
+                        rag_context="",
+                    )
+                )
+                response["data"]["result_baseline"] = baseline.get("result")
+                response["data"]["usage_baseline"] = baseline.get("usage")
+            except Exception as e:
+                logger.warning("무료_분석 baseline 호출 실패 (무시): %s", e)
+
+    return response
 
 
 # ── Task 2: 식단 유료 상세 리포트 ──
@@ -206,14 +256,18 @@ def analyze_meal_free(self, image_base64: str, media_type: str, risk_factors: st
     max_retries=2,
     default_retry_delay=5,
 )
-def analyze_meal_paid(self, image_base64: str, media_type: str, risk_factors: str = ""):
+def analyze_meal_paid(self, image_base64: str, media_type: str, risk_factors: str = "", risk_grade: str = ""):
     """
     식단 유료 상세 리포트 (-300pt)
 
     FastAPI에서 호출:
-        task = analyze_meal_paid.delay(image_base64, media_type, risk_factors)
+        task = analyze_meal_paid.delay(image_base64, media_type, risk_factors, risk_grade)
     """
-    return _run_vision_task(
+    # RAG 컨텍스트 검색 (risk_grade 없으면 필터 없이 전체 검색)
+    rag_context = _retrieve_nutrition_context(risk_grade, risk_factors)
+
+    # RAG 적용 결과
+    response = _run_vision_task(
         self=self,
         task_name="식단_유료_분석",
         image_base64=image_base64,
@@ -222,8 +276,31 @@ def analyze_meal_paid(self, image_base64: str, media_type: str, risk_factors: st
             image_bytes=img_bytes,
             media_type=media_type,
             risk_factors=risk_factors,
+            rag_context=rag_context,
         ),
     )
+
+    if response.get("status") == "success" and response.get("data"):
+        response["data"]["rag_applied"] = bool(rag_context)
+
+        # RAG_COMPARE 모드: 기본 응답도 동시 반환
+        from ai.core import config
+        if config.RAG_COMPARE and rag_context:
+            try:
+                baseline = asyncio.run(
+                    meal_service.analyze_paid(
+                        image_bytes=base64.b64decode(image_base64),
+                        media_type=media_type,
+                        risk_factors=risk_factors,
+                        rag_context="",
+                    )
+                )
+                response["data"]["result_baseline"] = baseline.get("result")
+                response["data"]["usage_baseline"] = baseline.get("usage")
+            except Exception as e:
+                logger.warning("유료_분석 baseline 호출 실패 (무시): %s", e)
+
+    return response
 
 
 # ── Task 3: 운동 캡처 인증 ──
