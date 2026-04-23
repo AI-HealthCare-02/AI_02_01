@@ -50,6 +50,8 @@ class Config(BaseSettings):
     # CORS 허용 도메인 (쉼표 구분 문자열)
     CORS_ORIGINS: str = "http://localhost:5173,https://frontend-one-omega-59.vercel.app,https://myhealthbuddy.vercel.app/"
 
+    FRONTEND_URL: str = "http://localhost:3000"
+
     GOOGLE_CLIENT_ID: str
     GOOGLE_CLIENT_SECRET: str
-    GOOGLE_REDIRECT_URI: str
+    GOOGLE_REDIRECT_URI: str = "http://localhost:8000/api/v1/auth/google/callback"

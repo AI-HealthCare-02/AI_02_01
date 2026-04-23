@@ -5,9 +5,11 @@ description = "AI 헬스케어 파이널 프로젝트 1조 - 마이헬스버디"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "asyncmy>=0.2.11",
     "celery>=5.6.3",
     "cryptography>=46.0.3",
     "fastapi>=0.128.0",
+    "greenlet>=3.3.2",
     "joblib>=1.5.3",
     "langfuse>=4.2.0",
     "numpy>=2.4.1",
