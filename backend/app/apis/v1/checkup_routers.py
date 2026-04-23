@@ -1,19 +1,17 @@
 """
 건강검진표 OCR 라우터 (REQ-HLTH-OCR)
-Celery 없이 CheckupService 직접 호출 → 수치 즉시 반환
+CheckupService 직접 호출 → 수치 즉시 반환
 
 식단/운동 분석과 달리 폼 자동완성 용도이므로 비동기 큐 없이 동기 응답.
 """
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, File, HTTPException, UploadFile, status
 
-from ai.vision.checkup_service import CheckupService
-from ai.vision.schemas import CheckupResponse
-from app.dependencies.security import get_request_user
+from app.schemas.checkup import CheckupResponse
+from app.services.checkup_service import CheckupService
 from app.dtos.ai_vision import ErrorResponse
-from app.models.users import User
 
 _ALLOWED_MEDIA_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
 _MAX_FILE_SIZE = 20 * 1024 * 1024  # 20MB
@@ -41,7 +39,6 @@ _service = CheckupService()
 )
 async def analyze_checkup(
     image: Annotated[UploadFile, File(description="건강검진 결과지 이미지 (JPEG, PNG, WebP, GIF)")],
-    current_user: Annotated[User, Depends(get_request_user)],
 ) -> CheckupResponse:
     media_type = image.content_type or "image/jpeg"
 
@@ -67,5 +64,5 @@ async def analyze_checkup(
             detail=str(e),
         ) from e
 
-    # TODO: cv_analysis_logs에 current_user.id + result_json 기록 (OCR 로그 저장)
+    # TODO: cv_analysis_logs에 result_json 기록 (OCR 로그 저장)
     return CheckupResponse(**result)
