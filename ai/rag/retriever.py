@@ -49,7 +49,7 @@ def retrieve_health_context(
     min_score = min_score or config.RAG_MIN_SCORE
     collection = collection or config.QDRANT_COLLECTION_MEDICAL
 
-    query_vector = embed(query)
+    query_vector = embed(query, langfuse_name="ml1-embedding-rag")
     return _search(query_vector, risk_grade, top_k, min_score, collection)
 
 
@@ -67,7 +67,7 @@ async def retrieve_health_context_async(
     min_score = min_score or config.RAG_MIN_SCORE
     collection = collection or config.QDRANT_COLLECTION_MEDICAL
 
-    query_vector = await embed_async(query)
+    query_vector = await embed_async(query, langfuse_name="ml1-embedding-rag")
     return _search(query_vector, risk_grade, top_k, min_score, collection)
 
 
