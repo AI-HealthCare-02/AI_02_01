@@ -38,7 +38,11 @@ def ml1_comment(user_info: dict, retrieved_context: str = "") -> dict:
     Langfuse 로깅:
     - LANGFUSE_PUBLIC_KEY가 설정된 경우에만 활성화
     - 미설정 환경에서는 기본 OpenAI 클라이언트로 폴백
+    - Langfuse name: "ml1-health-comment" (RAG 미적용) / "ml1-health-comment-rag" (RAG 적용)
     """
+    use_rag = bool(retrieved_context)
+    langfuse_name = "ml1-health-comment-rag" if use_rag else "ml1-health-comment"
+
     langfuse_public_key = os.getenv("LANGFUSE_PUBLIC_KEY")
     use_langfuse = False
 
@@ -48,7 +52,7 @@ def ml1_comment(user_info: dict, retrieved_context: str = "") -> dict:
 
             client = langfuse_openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"), timeout=60)
             use_langfuse = True
-            logger.info("Langfuse 클라이언트 초기화 완료")
+            logger.info("Langfuse 클라이언트 초기화 완료 (name=%s)", langfuse_name)
         except Exception as e:
             logger.warning("Langfuse 초기화 실패, 기본 OpenAI 클라이언트로 폴백 - %s", e)
             client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"), timeout=60)
@@ -56,10 +60,10 @@ def ml1_comment(user_info: dict, retrieved_context: str = "") -> dict:
         client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"), timeout=60)
         logger.info("Langfuse 미설정, 기본 OpenAI 클라이언트 사용")
 
-    system_prompt = SYSTEM_PROMPT_RAG if retrieved_context else SYSTEM_PROMPT
+    system_prompt = SYSTEM_PROMPT_RAG if use_rag else SYSTEM_PROMPT
     user_prompt = build_user_prompt(user_info, retrieved_context)
 
-    logger.info("OpenAI API 호출 시작 (RAG=%s)", bool(retrieved_context))
+    logger.info("OpenAI API 호출 시작 (name=%s)", langfuse_name)
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
@@ -68,8 +72,15 @@ def ml1_comment(user_info: dict, retrieved_context: str = "") -> dict:
         ],
         temperature=0,
         timeout=60,
+        name=langfuse_name,
     )
-    logger.info("OpenAI API 호출 완료")
+    logger.info(
+        "OpenAI API 호출 완료 (name=%s) - prompt_tokens=%s, completion_tokens=%s, total_tokens=%s",
+        langfuse_name,
+        response.usage.prompt_tokens if response.usage else "?",
+        response.usage.completion_tokens if response.usage else "?",
+        response.usage.total_tokens if response.usage else "?",
+    )
 
     raw = response.choices[0].message.content
 
