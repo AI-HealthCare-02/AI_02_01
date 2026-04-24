@@ -1,17 +1,17 @@
 import logging
+import time
+import uuid
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse
 
-# logging 기본 설정
-# - level=INFO: INFO 이상의 로그(INFO, WARNING, ERROR)만 출력, DEBUG는 무시
-# - format: 시간 | 로거이름 | 레벨 | 메시지 형식으로 출력
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(name)s | %(levelname)s | %(message)s",
 )
+logger = logging.getLogger("api.access")
 
 from app.apis.v1 import v1_routers
 from app.core.config import Config
@@ -22,12 +22,10 @@ from app.db.databases import engine
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 서버 시작 시: 테이블 자동 생성 (개발용) + Redis 초기화
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     await init_redis()
     yield
-    # 서버 종료 시: Redis 해제 + 엔진 정리
     await close_redis()
     await engine.dispose()
 
@@ -40,14 +38,70 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+
+@app.middleware("http")
+async def logging_middleware(request: Request, call_next):
+    # 헬스체크·정적 경로는 로깅 스킵
+    if request.url.path in ("/health", "/favicon.ico"):
+        return await call_next(request)
+
+    request_id = str(uuid.uuid4())[:8]
+    start = time.perf_counter()
+
+    # ── 요청 로깅
+    logger.info(
+        "[%s] REQUEST  %s %s | client=%s | content-type=%s",
+        request_id,
+        request.method,
+        request.url.path,
+        request.client.host if request.client else "-",
+        request.headers.get("content-type", "-"),
+    )
+
+    try:
+        response = await call_next(request)
+    except Exception as exc:
+        elapsed = (time.perf_counter() - start) * 1000
+        logger.error(
+            "[%s] UNHANDLED_ERROR %s %s | %.1fms | error=%s",
+            request_id,
+            request.method,
+            request.url.path,
+            elapsed,
+            exc,
+            exc_info=True,
+        )
+        raise
+
+    elapsed = (time.perf_counter() - start) * 1000
+
+    # 4xx/5xx는 WARNING/ERROR로 구분
+    if response.status_code >= 500:
+        log_fn = logger.error
+    elif response.status_code >= 400:
+        log_fn = logger.warning
+    else:
+        log_fn = logger.info
+
+    log_fn(
+        "[%s] RESPONSE %s %s | status=%d | %.1fms",
+        request_id,
+        request.method,
+        request.url.path,
+        response.status_code,
+        elapsed,
+    )
+    return response
+
+
 # CORS 미들웨어 추가 (프론트엔드 cross-origin 요청 허용)
 config = Config()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[origin.strip() for origin in config.CORS_ORIGINS.split(",")],
-    allow_credentials=True,  # 쿠키(refresh_token) 포함 허용
-    allow_methods=["*"],  # 모든 HTTP 메서드 허용
-    allow_headers=["*"],  # 모든 HTTP 헤더 허용
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 app.include_router(v1_routers)
