@@ -13,7 +13,6 @@ import os
 
 import redis
 from openai import OpenAI
-
 logger = logging.getLogger(__name__)
 
 _broker = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
@@ -30,10 +29,13 @@ TOP_K = 5
 def _get_client() -> OpenAI:
     return OpenAI(api_key=os.getenv("OPENAI_API_KEY"), timeout=60)
 
-
 def _embed(text: str, client: OpenAI) -> list[float]:
-    """텍스트 → 임베딩 벡터"""
-    response = client.embeddings.create(model=EMBED_MODEL, input=text)
+    """텍스트 → 임베딩 벡터 (Langfuse name: ml1-embedding-challenge)"""
+    response = client.embeddings.create(model=EMBED_MODEL, input=text, name="ml1-embedding-challenge")
+    logger.info(
+        "임베딩 완료 (name=ml1-embedding-challenge) - total_tokens=%s",
+        response.usage.total_tokens if response.usage else "?",
+    )
     return response.data[0].embedding
 
 
@@ -119,6 +121,30 @@ def retrieve_top_k(user_profile: dict, prediction: dict, challenges: list[dict])
     return [c for _, c in scored[:TOP_K]]
 
 
+def _get_langfuse_client() -> tuple[OpenAI, bool]:
+    """
+    Langfuse 설정 여부에 따라 클라이언트 반환.
+    Returns: (client, use_langfuse)
+    """
+    langfuse_public_key = os.getenv("LANGFUSE_PUBLIC_KEY")
+    if langfuse_public_key:
+        try:
+            from langfuse.openai import openai as langfuse_openai
+            return langfuse_openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"), timeout=60), True
+        except Exception as e:
+            logger.warning("Langfuse 초기화 실패, 기본 OpenAI 클라이언트로 폴백 - %s", e)
+    return _get_client(), False
+
+
+def _flush_langfuse() -> None:
+    """Langfuse 버퍼 플러시."""
+    try:
+        from langfuse import Langfuse
+        Langfuse().flush()
+    except Exception:
+        pass
+
+
 def generate_recommendations(
     user_profile: dict,
     prediction: dict,
@@ -126,8 +152,10 @@ def generate_recommendations(
 ) -> list[dict]:
     """
     Top K 챌린지 + 유저 데이터 → GPT → 추천 이유 포함 Top 3 반환
+    Langfuse name: "ml1-challenge-recommend"
     """
-    client = _get_client()
+    langfuse_name = "ml1-challenge-recommend"
+    client, use_langfuse = _get_langfuse_client()
 
     challenge_list_text = "\n".join([
         f"[ID:{c['id']}] {c['title']} | 카테고리:{c.get('category','')} | "
@@ -159,6 +187,7 @@ def generate_recommendations(
         f"[챌린지 후보]\n{challenge_list_text}"
     )
 
+    logger.info("OpenAI API 호출 시작 (name=%s)", langfuse_name)
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
@@ -166,7 +195,18 @@ def generate_recommendations(
             {"role": "user", "content": user_prompt},
         ],
         temperature=0,
+        name=langfuse_name,
     )
+    logger.info(
+        "OpenAI API 호출 완료 (name=%s) - prompt_tokens=%s, completion_tokens=%s, total_tokens=%s",
+        langfuse_name,
+        response.usage.prompt_tokens if response.usage else "?",
+        response.usage.completion_tokens if response.usage else "?",
+        response.usage.total_tokens if response.usage else "?",
+    )
+
+    if use_langfuse:
+        _flush_langfuse()
 
     raw = response.choices[0].message.content
     try:
