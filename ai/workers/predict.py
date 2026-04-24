@@ -37,7 +37,7 @@ FACTOR_MAP = {
     'hypertension': '고혈압',        
     'high_cholesterol': '고콜레스테롤', 
     'obesity': '비만',              
-    'age_bmi': '고령·과체중',         
+    'age_bmi': '나이·체중 관리 필요',
     'cholesterol': '고콜레스테롤',
     'gluc': '고혈당',
     'bmi': '과체중',
@@ -49,12 +49,12 @@ FACTOR_MAP = {
     'pulse_pressure': '고혈압',
     'risk_class': '복합위험군',
     'bp_ratio': '고혈압',           # 추가
-    'age_hypertension': '고령+고혈압',  # 추가
-    'age_cholesterol': '고령+고콜레스테롤',  # 추가
+    'age_hypertension': '나이·혈압 관리 필요',  # 추가
+    'age_cholesterol': '나이·콜레스테롤 관리 필요',  # 추가
     'age_ap_hi': '고혈압',          # 추가
     'smoke_alco': '흡연+음주',      # 추가
     'age_active': '운동부족',       # 추가
-    'bp_bmi': '비만+고혈압',        # 추가
+    'bp_bmi': '체중·혈압 관리 필요',  # 추가
 }
 
 # 챌린지 달성 시 보정값 (의학 문헌 기반)
