@@ -62,6 +62,18 @@ class MigrateGuestAnalysisRequest(BaseModel):
     record_id: Annotated[int, Field(description="회원 건강검진 기록 ID")]
 
 
+class RecalculateRiskRequest(BaseModel):
+    """챌린지 달성 후 위험도 재예측 요청"""
+    record_id: Annotated[int, Field(description="건강검진 기록 ID")]
+    completed_challenges: Annotated[
+        list[str],
+        Field(
+            description="달성한 챌린지 키 목록 (smoke_7days / alco_7days / active_7days / diet_7days)",
+            examples=[["smoke_7days", "active_7days"]],
+        ),
+    ]
+
+
 # ──────────────────────────────────────────────
 # Response DTOs
 # ──────────────────────────────────────────────
