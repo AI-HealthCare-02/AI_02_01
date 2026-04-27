@@ -23,7 +23,7 @@ class CvAnalysisLog(Base):
     user_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("users.id"), nullable=False, comment="FK → users"
     )
-    image_url: Mapped[str] = mapped_column(String(500), nullable=False, comment="업로드 이미지 경로")
+    image_url: Mapped[str | None] = mapped_column(String(500), nullable=True, comment="업로드 이미지 경로 (미사용 시 null)")
     analysis_type: Mapped[AnalysisTypeEnum] = mapped_column(
         Enum(AnalysisTypeEnum, values_callable=lambda x: [e.value for e in x]),
         nullable=False, comment="diet / health_checkup / exercise"

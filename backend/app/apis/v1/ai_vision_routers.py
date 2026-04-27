@@ -11,28 +11,34 @@ ML2 Vision API 라우터 — 식단 분석 / 운동 캡처 인증 엔드포인�
 """
 
 import base64
+import logging
 from typing import Annotated
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import JSONResponse as Response
+from redis.asyncio import Redis
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.redis import get_redis
+from app.db.databases import get_db_session
+from app.dependencies.security import get_request_user
 from app.dtos.ai_vision import (
     ErrorResponse,
     TaskResponse,
     TaskResultResponse,
 )
+from app.models.users import User
 from app.services.ai_vision_service import AIVisionService
 from app.utils.pubsub import wait_task_result
-from app.dependencies.security import get_request_user
-from app.models.users import User
+from app.utils.s3 import upload_image
 
 # 허용 MIME 타입 (OpenAI Vision API 지원 형식)
 _ALLOWED_MEDIA_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
 
 # /api/v1/ai 경로의 라우터. tags=["ai-vision"]은 Swagger에서 그룹명으로 표시된다.
 ai_vision_router = APIRouter(prefix="/ai", tags=["ai-vision"])
-
-ai_vision_service = AIVisionService()
 
 
 def _validate_and_encode(image: UploadFile, image_bytes: bytes) -> tuple[str, str]:
@@ -83,14 +89,24 @@ def _validate_and_encode(image: UploadFile, image_bytes: bytes) -> tuple[str, st
 async def analyze_meal_free(
     image: Annotated[UploadFile, File(description="식단 이미지 파일 (JPEG, PNG, WebP, GIF)")],
     current_user: Annotated[User, Depends(get_request_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    redis: Annotated[Redis, Depends(get_redis)],
     risk_factors: Annotated[str, Form(description="사용자 위험 요인 (예: 고혈압, 당뇨)")] = "",
 ) -> Response:
     image_bytes = await image.read()
     image_base64, media_type = _validate_and_encode(image, image_bytes)
+    try:
+        image_url = await upload_image(image_bytes, media_type)
+    except Exception as e:
+        logger.warning("S3 업로드 실패 (meal_free) - 분석은 계속 진행: %s", e)
+        image_url = None
 
-    task_id = ai_vision_service.enqueue_meal_free(
+    service = AIVisionService(session, redis)
+    task_id = await service.enqueue_meal_free(
         image_base64=image_base64,
         media_type=media_type,
+        user_id=current_user.id,
+        image_url=image_url,
         risk_factors=risk_factors,
     )
     return Response(
@@ -122,15 +138,25 @@ async def analyze_meal_free(
 async def analyze_meal_paid(
     image: Annotated[UploadFile, File(description="식단 이미지 파일 (JPEG, PNG, WebP, GIF)")],
     current_user: Annotated[User, Depends(get_request_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    redis: Annotated[Redis, Depends(get_redis)],
     risk_factors: Annotated[str, Form(description="사용자 위험 요인 (예: 고혈압, 당뇨)")] = "",
 ) -> Response:
     # TODO: 포인트 차감 로직 추가 (current_user.id 사용)
     image_bytes = await image.read()
     image_base64, media_type = _validate_and_encode(image, image_bytes)
+    try:
+        image_url = await upload_image(image_bytes, media_type)
+    except Exception as e:
+        logger.warning("S3 업로드 실패 (meal_paid) - 분석은 계속 진행: %s", e)
+        image_url = None
 
-    task_id = ai_vision_service.enqueue_meal_paid(
+    service = AIVisionService(session, redis)
+    task_id = await service.enqueue_meal_paid(
         image_base64=image_base64,
         media_type=media_type,
+        user_id=current_user.id,
+        image_url=image_url,
         risk_factors=risk_factors,
     )
     return Response(
@@ -165,13 +191,23 @@ async def analyze_meal_paid(
 async def analyze_exercise(
     image: Annotated[UploadFile, File(description="운동 앱 스크린샷 파일 (JPEG, PNG, WebP, GIF)")],
     current_user: Annotated[User, Depends(get_request_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    redis: Annotated[Redis, Depends(get_redis)],
 ) -> Response:
     image_bytes = await image.read()
     image_base64, media_type = _validate_and_encode(image, image_bytes)
+    try:
+        image_url = await upload_image(image_bytes, media_type)
+    except Exception as e:
+        logger.warning("S3 업로드 실패 (exercise) - 분석은 계속 진행: %s", e)
+        image_url = None
 
-    task_id = ai_vision_service.enqueue_exercise(
+    service = AIVisionService(session, redis)
+    task_id = await service.enqueue_exercise(
         image_base64=image_base64,
         media_type=media_type,
+        user_id=current_user.id,
+        image_url=image_url,
     )
     return Response(
         content=TaskResponse(
@@ -201,8 +237,13 @@ async def analyze_exercise(
         200: {"description": "태스크 결과", "model": TaskResultResponse},
     },
 )
-async def get_task_result(task_id: str) -> Response:
-    result = ai_vision_service.get_task_result(task_id)
+async def get_task_result(
+    task_id: str,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    redis: Annotated[Redis, Depends(get_redis)],
+) -> Response:
+    service = AIVisionService(session, redis)
+    result = await service.get_task_result(task_id)
     return Response(
         content=TaskResultResponse(**result).model_dump(),
         status_code=status.HTTP_200_OK,
@@ -227,9 +268,15 @@ async def get_task_result(task_id: str) -> Response:
         200: {"description": "태스크 결과 또는 PENDING(타임아웃)", "model": TaskResultResponse},
     },
 )
-async def wait_task_result_endpoint(task_id: str) -> Response:
+async def wait_task_result_endpoint(
+    task_id: str,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    redis: Annotated[Redis, Depends(get_redis)],
+) -> Response:
+    service = AIVisionService(session, redis)
+
     # 1. 이미 완료된 결과가 있으면 즉시 반환 (Pub/Sub 구독 불필요)
-    result = ai_vision_service.get_task_result(task_id)
+    result = await service.get_task_result(task_id)
     if result.get("status") not in ("PENDING", None):
         return Response(
             content=TaskResultResponse(**result).model_dump(),
@@ -240,20 +287,14 @@ async def wait_task_result_endpoint(task_id: str) -> Response:
     data = await wait_task_result(task_id)
 
     if data is None:
-        # 타임아웃 → 408 반환 (30초 내 AI 분석 미완료)
-        # HTTP 200 + PENDING 대신 408로 반환해야 클라이언트가 상태 코드 레벨에서 명확히 구분 가능
         return Response(
             content=TaskResultResponse(task_id=task_id, status="PENDING", result=None, error=None).model_dump(),
             status_code=status.HTTP_408_REQUEST_TIMEOUT,
         )
 
-    # 3. 결과 도착 → 즉시 반환
+    # 3. 결과 도착 → get_task_result 재호출로 DB 저장 + 응답 반환
+    result = await service.get_task_result(task_id)
     return Response(
-        content=TaskResultResponse(
-            task_id=task_id,
-            status=data.get("status", "FAILURE"),
-            result=data.get("data"),
-            error=data.get("error"),
-        ).model_dump(),
+        content=TaskResultResponse(**result).model_dump(),
         status_code=status.HTTP_200_OK,
     )
