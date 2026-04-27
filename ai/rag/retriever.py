@@ -81,12 +81,16 @@ def _search(
     """Qdrant 검색 공통 로직."""
     client = get_qdrant_client()
 
+    # risk_grade 정규화: 공백 제거 (클라이언트 전송 값 불일치 방어)
+    # 예) "매우 높음" → "매우높음", "낮 음" → "낮음"
+    normalized_grade = risk_grade.replace(" ", "") if risk_grade else ""
+
     # risk_grade가 있으면 해당 등급 문서만 필터링, 없으면 전체 검색
     query_filter = (
         Filter(
-            must=[FieldCondition(key="risk_grades", match=MatchValue(value=risk_grade))]
+            must=[FieldCondition(key="risk_grades", match=MatchValue(value=normalized_grade))]
         )
-        if risk_grade
+        if normalized_grade
         else None
     )
 
