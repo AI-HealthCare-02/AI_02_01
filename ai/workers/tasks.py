@@ -8,6 +8,7 @@ import json
 import logging
 import math
 import os
+import time
 
 import redis
 
@@ -115,10 +116,15 @@ def analyze_health(self, user_data: dict, nickname: str = "사용자", challenge
     try:
         from ai.core import config as ai_config
 
+        # 전체 태스크 시작 시각
+        task_start = time.perf_counter()
+
         # Step 1: XGBoost 예측 (< 0.1초)
         logger.info("XGBoost 예측 시작 - task_id: %s", task_id)
+        _t0 = time.perf_counter()
         predict_result = ml1_predict(user_data)
-        logger.info("XGBoost 예측 완료 - risk_grade: %s, task_id: %s", predict_result["risk_grade"], task_id)
+        predict_ms = round((time.perf_counter() - _t0) * 1000)
+        logger.info("XGBoost 예측 완료 - risk_grade: %s, %dms, task_id: %s", predict_result["risk_grade"], predict_ms, task_id)
 
         user_info = {
             "nickname": nickname,
@@ -134,16 +140,20 @@ def analyze_health(self, user_data: dict, nickname: str = "사용자", challenge
 
         # Step 2: RAG 컨텍스트 검색 (+0.3~0.5초)
         retrieved_context = ""
+        rag_search_ms = 0
         if ai_config.RAG_ENABLED:
+            _t0 = time.perf_counter()
             try:
                 from ai.rag.retriever import build_rag_query, format_context_for_prompt, retrieve_health_context
 
                 rag_query = build_rag_query(user_info)
                 rag_chunks = retrieve_health_context(rag_query, predict_result["risk_grade"])
                 retrieved_context = format_context_for_prompt(rag_chunks)
+                rag_search_ms = round((time.perf_counter() - _t0) * 1000)
                 logger.info(
-                    "RAG 검색 완료 - %d개 청크 검색됨, task_id: %s",
+                    "RAG 검색 완료 - %d개 청크 검색됨, %dms, task_id: %s",
                     len(rag_chunks),
+                    rag_search_ms,
                     task_id,
                 )
             except Exception as rag_err:
@@ -154,9 +164,12 @@ def analyze_health(self, user_data: dict, nickname: str = "사용자", challenge
         llm_cache_key = _build_llm_cache_key(predict_result, user_data, challenge_days, retrieved_context)
         cached_comment_raw = cache_redis.get(llm_cache_key)
 
+        llm_ms = 0
+        llm_cache_hit = False
         if cached_comment_raw:
             logger.info("LLM 캐시 히트 - risk_grade: %s, task_id: %s", predict_result["risk_grade"], task_id)
             comment_result = json.loads(cached_comment_raw)
+            llm_cache_hit = True
         else:
             # Step 4: OpenAI 호출 (4~5초)
             logger.info(
@@ -164,8 +177,10 @@ def analyze_health(self, user_data: dict, nickname: str = "사용자", challenge
                 bool(retrieved_context),
                 task_id,
             )
+            _t0 = time.perf_counter()
             comment_result = ml1_comment(user_info, retrieved_context)
-            logger.info("OpenAI 호출 완료 - task_id: %s", task_id)
+            llm_ms = round((time.perf_counter() - _t0) * 1000)
+            logger.info("OpenAI 호출 완료 - %dms, task_id: %s", llm_ms, task_id)
 
             # LLM 코멘트 캐시 저장 (TTL 7일)
             try:
@@ -174,19 +189,18 @@ def analyze_health(self, user_data: dict, nickname: str = "사용자", challenge
             except Exception as cache_err:
                 logger.warning("LLM 캐시 저장 실패 (무시) - %s", cache_err)
 
-        # Step 5: RAG 비교 모드 (RAG_COMPARE=true일 때 기본 응답도 함께 반환)
+        # Step 5: 최종 결과 조합 (RAG 적용 결과만 반환)
         result: dict = {
             "ml1_predict": predict_result,
             "ml1_comment": comment_result,
         }
 
-        if ai_config.RAG_ENABLED and retrieved_context:
-            result["rag_context"] = retrieved_context
-
-        if ai_config.RAG_COMPARE and ai_config.RAG_ENABLED and retrieved_context:
-            logger.info("RAG 비교 모드 활성화 - 기본 프롬프트 추가 호출, task_id: %s", task_id)
-            baseline_comment = ml1_comment(user_info, "")
-            result["ml1_comment_baseline"] = baseline_comment
+        # 구간별 소요 시간 로그 (응답에는 포함하지 않음)
+        total_ms = round((time.perf_counter() - task_start) * 1000)
+        logger.info(
+            "ML1 구간 시간 - predict: %dms, rag: %dms, llm: %dms, llm_cache_hit: %s, total: %dms, task_id: %s",
+            predict_ms, rag_search_ms, llm_ms, llm_cache_hit, total_ms, task_id,
+        )
 
         # 전체 결과 캐시 저장 (TTL 24시간, 기존 동작 유지)
         cache_key = _build_cache_key(user_data, nickname, challenge_days)

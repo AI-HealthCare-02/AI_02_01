@@ -13,6 +13,7 @@ import base64
 import json
 import logging
 import os
+import time
 
 import redis as sync_redis
 
@@ -102,7 +103,7 @@ def success_response(task_name: str, task_id: str, result: dict) -> dict:
         "status": "success",
         "task_name": task_name,
         "task_id": task_id,
-        "data": result,         # {"result": {...}, "usage": {...}}
+        "data": result,         # {"result": {...}}
         "error": None,
     }
 
@@ -152,8 +153,10 @@ def _run_vision_task(self, task_name: str, image_base64: str, media_type: str, s
 
     # ── Step 2: 서비스 호출 (실패 시 retry 함) ──
     try:
+        _t0 = time.perf_counter()
         result = asyncio.run(service_call(image_bytes))
-        logger.info(f"[{task_name}] 완료 | task_id={task_id}")
+        llm_ms = round((time.perf_counter() - _t0) * 1000)
+        logger.info(f"[{task_name}] 완료 | llm_ms={llm_ms} | task_id={task_id}")
         response = success_response(task_name, task_id, result)
 
         # Pub/Sub 발행 (SSE 구독 중인 클라이언트에 실시간 전달)
@@ -209,8 +212,14 @@ def analyze_meal_free(self, image_base64: str, media_type: str, risk_factors: st
         task = analyze_meal_free.delay(image_base64, media_type, risk_factors, risk_grade)
         result = task.get()  # 또는 task.id로 상태 조회
     """
+    # 전체 태스크 시작 시각
+    task_start = time.perf_counter()
+
     # RAG 컨텍스트 검색 (risk_grade 없으면 필터 없이 전체 검색)
+    _t0 = time.perf_counter()
     rag_context = _retrieve_nutrition_context(risk_grade, risk_factors)
+    rag_search_ms = round((time.perf_counter() - _t0) * 1000)
+    logger.info("무료_분석 RAG 검색 완료 - %dms", rag_search_ms)
 
     # RAG 적용 결과
     response = _run_vision_task(
@@ -226,25 +235,10 @@ def analyze_meal_free(self, image_base64: str, media_type: str, risk_factors: st
         ),
     )
 
-    if response.get("status") == "success" and response.get("data"):
-        response["data"]["rag_applied"] = bool(rag_context)
-
-        # RAG_COMPARE 모드: 기본 응답도 동시 반환
-        from ai.core import config
-        if config.RAG_COMPARE and rag_context:
-            try:
-                baseline = asyncio.run(
-                    meal_service.analyze_free(
-                        image_bytes=base64.b64decode(image_base64),
-                        media_type=media_type,
-                        risk_factors=risk_factors,
-                        rag_context="",
-                    )
-                )
-                response["data"]["result_baseline"] = baseline.get("result")
-                response["data"]["usage_baseline"] = baseline.get("usage")
-            except Exception as e:
-                logger.warning("무료_분석 baseline 호출 실패 (무시): %s", e)
+    # 구간별 소요 시간 로그 (응답에는 포함하지 않음)
+    if response.get("status") == "success":
+        total_ms = round((time.perf_counter() - task_start) * 1000)
+        logger.info("무료_분석 구간 시간 - rag: %dms, total: %dms", rag_search_ms, total_ms)
 
     return response
 
@@ -263,8 +257,14 @@ def analyze_meal_paid(self, image_base64: str, media_type: str, risk_factors: st
     FastAPI에서 호출:
         task = analyze_meal_paid.delay(image_base64, media_type, risk_factors, risk_grade)
     """
+    # 전체 태스크 시작 시각
+    task_start = time.perf_counter()
+
     # RAG 컨텍스트 검색 (risk_grade 없으면 필터 없이 전체 검색)
+    _t0 = time.perf_counter()
     rag_context = _retrieve_nutrition_context(risk_grade, risk_factors)
+    rag_search_ms = round((time.perf_counter() - _t0) * 1000)
+    logger.info("유료_분석 RAG 검색 완료 - %dms", rag_search_ms)
 
     # RAG 적용 결과
     response = _run_vision_task(
@@ -280,25 +280,10 @@ def analyze_meal_paid(self, image_base64: str, media_type: str, risk_factors: st
         ),
     )
 
-    if response.get("status") == "success" and response.get("data"):
-        response["data"]["rag_applied"] = bool(rag_context)
-
-        # RAG_COMPARE 모드: 기본 응답도 동시 반환
-        from ai.core import config
-        if config.RAG_COMPARE and rag_context:
-            try:
-                baseline = asyncio.run(
-                    meal_service.analyze_paid(
-                        image_bytes=base64.b64decode(image_base64),
-                        media_type=media_type,
-                        risk_factors=risk_factors,
-                        rag_context="",
-                    )
-                )
-                response["data"]["result_baseline"] = baseline.get("result")
-                response["data"]["usage_baseline"] = baseline.get("usage")
-            except Exception as e:
-                logger.warning("유료_분석 baseline 호출 실패 (무시): %s", e)
+    # 구간별 소요 시간 로그 (응답에는 포함하지 않음)
+    if response.get("status") == "success":
+        total_ms = round((time.perf_counter() - task_start) * 1000)
+        logger.info("유료_분석 구간 시간 - rag: %dms, total: %dms", rag_search_ms, total_ms)
 
     return response
 
