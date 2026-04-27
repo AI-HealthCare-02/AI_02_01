@@ -41,7 +41,7 @@ class MealService:
             rag_context: RAG 검색 결과 컨텍스트 (비어있으면 기본 프롬프트 사용)
 
         Returns:
-            dict: {"result": MealFreeResult, "usage": UsageInfo}
+            dict: {"result": MealFreeResult}
         """
         logger.info("식단 무료 분석 시작 (RAG=%s)", bool(rag_context))
 
@@ -91,7 +91,7 @@ class MealService:
             rag_context: RAG 검색 결과 컨텍스트 (비어있으면 기본 프롬프트 사용)
 
         Returns:
-            dict: {"result": MealPaidResult, "usage": UsageInfo}
+            dict: {"result": MealPaidResult}
 
         Note:
             포인트 차감은 이 함수가 아닌 라우터(엔드포인트)에서 처리.

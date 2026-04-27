@@ -34,7 +34,7 @@ class ExerciseService:
             media_type: MIME 타입
 
         Returns:
-            dict: {"result": ExerciseResult, "usage": UsageInfo}
+            dict: {"result": ExerciseResult}
         """
         logger.info("운동 캡처 분석 시작")
 
