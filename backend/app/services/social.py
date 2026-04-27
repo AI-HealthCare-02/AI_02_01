@@ -35,6 +35,7 @@ class SocialService:
         result = []
         for user in users:
             is_friend = await self.repo.is_friend(current_user.id, user.id)
+            is_requested = await self.repo.has_pending_request(current_user.id, user.id)
             result.append(
                 UserSearchResponse(
                     id=user.id,
@@ -42,6 +43,7 @@ class SocialService:
                     profile_image=user.profile_image,
                     character_stage=user.character_stage,
                     is_friend=is_friend,
+                    is_requested=is_requested,
                 )
             )
         return UserSearchListResponse(users=result)
