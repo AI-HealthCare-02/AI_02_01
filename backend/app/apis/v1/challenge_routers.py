@@ -186,7 +186,7 @@ async def log_daily(
     current_user: Annotated[User, Depends(get_request_user)],
 ) -> Response:
     service = ChallengeService(session)
-    log = await service.log_daily(
+    log, current_streak, is_completed = await service.log_daily(
         user_challenge_id=user_challenge_id,
         user_id=current_user.id,
         verification_type=request.verification_type,
@@ -203,6 +203,8 @@ async def log_daily(
             input_value=log.input_value,
             cv_result_id=log.cv_result_id,
             created_at=log.created_at,
+            current_streak=current_streak,
+            is_completed=is_completed,
         ).model_dump(mode="json"),
         status_code=status.HTTP_201_CREATED,
     )

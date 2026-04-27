@@ -80,6 +80,8 @@ class ChallengeLogResponse(BaseModel):
     input_value: str | None = None
     cv_result_id: int | None = None
     created_at: datetime
+    current_streak: int
+    is_completed: bool
 
 
 class MessageResponse(BaseModel):
