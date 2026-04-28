@@ -1,0 +1,208 @@
+name: CD
+
+# -------------------------------------------------------
+# 언제 이 워크플로우가 실행되는가?
+# - main 브랜치에 코드가 push(= PR merge)될 때만 실행
+# - CI는 PR 단계에서 이미 통과했으므로 여기서는 바로 배포로 진행
+# - 브랜치 보호 규칙(Branch Protection)으로 CI를 통과한 PR만
+#   main에 merge할 수 있도록 설정해두면 안전성이 보장됨
+# -------------------------------------------------------
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # -------------------------------------------------------
+      # Step 1. 코드 체크아웃
+      # - main 브랜치의 최신 코드를 runner(가상 머신)에 내려받음
+      # - Dockerfile, docker-compose.prod.yml, nginx conf 등
+      #   빌드와 배포에 필요한 파일 전체가 이 step에서 준비됨
+      # -------------------------------------------------------
+      - name: 코드 체크아웃
+        uses: actions/checkout@v4
+
+      # -------------------------------------------------------
+      # Step 2. Docker Buildx 설정
+      # - Buildx: Docker의 확장 빌드 엔진
+      # - 이후 docker/build-push-action이 내부적으로 Buildx를 사용하므로 필수
+      # - BuildKit 기반이라 레이어 캐시, 병렬 빌드 등 고급 기능이 활성화됨
+      # -------------------------------------------------------
+      - name: Docker Buildx 설정
+        uses: docker/setup-buildx-action@v3
+
+      # -------------------------------------------------------
+      # Step 3. Docker Hub 로그인
+      # - DOCKER_USER: Docker Hub 아이디
+      # - DOCKER_TOKEN: Docker Hub Access Token (비밀번호 대신 사용)
+      # - GitHub Secrets에 등록된 값을 ${{ secrets.XXX }} 문법으로 가져옴
+      #   → 로그에 값이 노출되지 않고 안전하게 사용됨
+      # -------------------------------------------------------
+      - name: Docker Hub 로그인
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USER }}
+          password: ${{ secrets.DOCKER_TOKEN }}
+
+      # -------------------------------------------------------
+      # Step 4. 이미지 태그(버전) 설정
+      # - git commit SHA 앞 7자리를 이미지 버전으로 사용
+      #   예) abc1234 → app-abc1234, ai-abc1234
+      # - v1.0.0 같은 수동 버전 대신 SHA를 쓰는 이유:
+      #   · 어떤 커밋에서 빌드된 이미지인지 추적 가능
+      #   · 사람이 직접 버전을 올리는 실수를 방지
+      # - GITHUB_OUTPUT에 저장해 이후 step에서 재사용
+      # -------------------------------------------------------
+      - name: 이미지 태그 설정
+        id: tag
+        run: echo "sha=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+
+      # -------------------------------------------------------
+      # Step 5. FastAPI 이미지 빌드 & Docker Hub 푸시
+      # - context: . (루트)
+      #   → backend/app/Dockerfile이 루트에서 pyproject.toml, uv.lock을 COPY하기 때문
+      #   → context를 backend/app/으로 좁히면 COPY가 실패함
+      # - tags: latest + SHA 두 가지로 동시 푸시
+      #   · latest → 항상 최신 이미지를 가리키는 포인터
+      #   · SHA    → 특정 버전으로 롤백할 때 사용
+      # - cache-from/cache-to: GitHub Actions 캐시를 활용한 빌드 속도 향상
+      #   → 의존성이 바뀌지 않았으면 레이어를 재사용해 빌드 시간 단축
+      # -------------------------------------------------------
+      - name: FastAPI 이미지 빌드 & 푸시
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./backend/app/Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.DOCKER_USER }}/${{ secrets.DOCKER_REPOSITORY }}:app-latest
+            ${{ secrets.DOCKER_USER }}/${{ secrets.DOCKER_REPOSITORY }}:app-${{ steps.tag.outputs.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # -------------------------------------------------------
+      # Step 6. AI Worker 이미지 빌드 & Docker Hub 푸시
+      # - FastAPI와 동일한 이유로 context는 루트(.)
+      #   → ai/Dockerfile이 루트의 pyproject.toml, uv.lock을 COPY함
+      # -------------------------------------------------------
+      - name: AI Worker 이미지 빌드 & 푸시
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./ai/Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.DOCKER_USER }}/${{ secrets.DOCKER_REPOSITORY }}:ai-latest
+            ${{ secrets.DOCKER_USER }}/${{ secrets.DOCKER_REPOSITORY }}:ai-${{ steps.tag.outputs.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # -------------------------------------------------------
+      # Step 7. 설정 파일 서버로 전송 (SCP)
+      # - deployment.sh에서 수동으로 하던 파일 복사를 자동화
+      # - 레포에 커밋된 파일들이므로 checkout한 코드에서 바로 복사 가능
+      #
+      # 복사 대상:
+      #   · docker-compose.prod.yml → ~/project/docker-compose.yml
+      #     코드 변경과 함께 서비스 구성도 자동 반영됨
+      #   · nginx/prod_https.conf → ~/project/nginx/default.conf
+      #     nginx 라우팅 설정 변경 시 자동 반영됨
+      # -------------------------------------------------------
+      - name: 설정 파일 서버 전송
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          source: "docker-compose.prod.yml,nginx/prod_https.conf"
+          target: ~/project_files  # runner에서 서버로 옮긴 파일의 임시 경로
+
+      # -------------------------------------------------------
+      # Step 8. EC2 서버 배포
+      # - 파일 배치 + .env 생성 + 컨테이너 재시작을 순서대로 실행
+      #
+      # [.env 처리 방식]
+      #   .prod.env는 .gitignore에 막혀 레포에 없음
+      #   → 파일 전체 내용을 PROD_ENV_FILE이라는 GitHub Secret으로 등록
+      #   → SSH 세션 안에서 파일로 복원
+      #   → 민감 정보(DB 비밀번호, API 키)가 로그에 노출되지 않음
+      #
+      # [배포 순서]
+      #   1) .env 파일 생성 (PROD_ENV_FILE Secret → ~/project/.env)
+      #   2) docker-compose.yml, nginx conf를 올바른 위치로 이동
+      #   3) .env의 APP_VERSION, AI_WORKER_VERSION을 새 SHA로 교체
+      #      → docker-compose.prod.yml이 ${APP_VERSION}으로 이미지 태그를 참조하므로
+      #        이 값이 바뀌어야 새 이미지를 인식함
+      #   4) docker compose pull: Docker Hub에서 새 이미지 다운로드
+      #   5) docker compose up: 새 이미지로 컨테이너 재시작
+      #      --no-build: 서버에서 직접 빌드하지 않고 pull한 이미지를 사용
+      #      --no-deps: redis, mysql, qdrant 등 인프라 서비스는 건드리지 않음
+      #   6) nginx reload: nginx conf 변경 사항 반영 (nginx 컨테이너 재시작 없이)
+      #   7) docker image prune: 사용하지 않는 구버전 이미지 삭제 (디스크 절약)
+      # -------------------------------------------------------
+      - name: EC2 배포
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          envs: NEW_SHA,PROD_ENV_FILE
+          script: |
+            set -e
+            mkdir -p ~/project/nginx
+
+            echo "1) .env 파일 생성..."
+            echo "$PROD_ENV_FILE" > ~/project/.env
+
+            echo "2) 설정 파일 배치..."
+            mv ~/project_files/docker-compose.prod.yml ~/project/docker-compose.yml
+            mv ~/project_files/nginx/prod_https.conf ~/project/nginx/default.conf
+            rm -rf ~/project_files
+
+            echo "3) 버전 업데이트: $NEW_SHA"
+            sed -i "s/^APP_VERSION=.*/APP_VERSION=$NEW_SHA/" ~/project/.env
+            sed -i "s/^AI_WORKER_VERSION=.*/AI_WORKER_VERSION=$NEW_SHA/" ~/project/.env
+
+            echo "4) 새 이미지 pull..."
+            cd ~/project
+            docker compose pull fastapi ai-worker
+
+            echo "5) 컨테이너 재시작..."
+            docker compose up -d --no-build --no-deps fastapi ai-worker
+
+            echo "6) nginx 설정 반영..."
+            docker compose exec -T nginx nginx -s reload
+
+            echo "7) 구버전 이미지 정리..."
+            docker image prune -f
+
+            echo "배포 완료: $NEW_SHA"
+        env:
+          NEW_SHA: ${{ steps.tag.outputs.sha }}
+          PROD_ENV_FILE: ${{ secrets.PROD_ENV_FILE }}
+
+      # -------------------------------------------------------
+      # Step 9. Discord 배포 알림
+      # - if: always() → 배포 성공/실패 모두 알림 전송
+      #   (if를 생략하면 앞 step이 실패했을 때 이 step은 실행되지 않음)
+      # - job.status: 워크플로우 전체 결과 ('success' | 'failure' | 'cancelled')
+      # - DISCORD_WEBHOOK: Discord 채널 웹훅 URL (GitHub Secret으로 관리)
+      #   발급 방법: Discord 채널 → 설정 → 연동 → 웹후크 → 새 웹후크
+      # -------------------------------------------------------
+      - name: Discord 배포 알림
+        if: always()
+        uses: sarisia/actions-status-discord@v1
+        with:
+          webhook: ${{ secrets.DISCORD_WEBHOOK }}
+          status: ${{ job.status }}
+          title: "MyHealthBuddy 배포"
+          description: |
+            **브랜치:** main
+            **커밋:** `${{ steps.tag.outputs.sha }}`
+            **커밋 메시지:** ${{ github.event.head_commit.message }}
+            **배포자:** ${{ github.actor }}
+          color: ${{ job.status == 'success' && '0x00FF00' || '0xFF0000' }}
+          username: "배포봇"
