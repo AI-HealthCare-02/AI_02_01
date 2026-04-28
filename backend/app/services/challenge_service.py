@@ -207,11 +207,13 @@ class ChallengeService:
                         user_challenge_id, total_logs, challenge.required_success_days,
                     )
 
+        is_completed = user_challenge.status == UserChallengeStatusEnum.COMPLETED
+
         logger.info(
-            "인증 완료 - user_challenge_id: %d, streak: %d",
-            user_challenge_id, new_streak,
+            "인증 완료 - user_challenge_id: %d, streak: %d, is_completed: %s",
+            user_challenge_id, new_streak, is_completed,
         )
-        return log
+        return log, new_streak, is_completed
 
     # ══════════════════════════════════════════
     # 공통 헬퍼
