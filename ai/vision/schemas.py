@@ -32,6 +32,7 @@ class UsageInfo(BaseModel):
 class MealFreeResult(BaseModel):
     food_name: str = Field(min_length=1, description="대표 음식명")
     food_items: list[str] = Field(description="구성 음식 목록")
+    estimated_calories: int = Field(ge=0, description="추정 칼로리 (kcal)")
     nutrition_ratio: NutritionRatio
     sodium_level: Literal["높음", "보통", "낮음"] = Field(description="나트륨 수준")
     feedback: str = Field(min_length=1, description="한 줄 피드백")
@@ -45,6 +46,14 @@ class MealFreeResponse(BaseModel):
 # ──────────────────────────────────────────────
 # 식단 분석 — 유료 상세 리포트
 # ──────────────────────────────────────────────
+class DailyIntakeRatio(BaseModel):
+    calories_pct: int = Field(ge=0, description="칼로리 일일 권장 대비 비율 (%)")
+    carbohydrate_pct: int = Field(ge=0, description="탄수화물 일일 권장 대비 비율 (%)")
+    protein_pct: int = Field(ge=0, description="단백질 일일 권장 대비 비율 (%)")
+    fat_pct: int = Field(ge=0, description="지방 일일 권장 대비 비율 (%)")
+    sodium_pct: int = Field(ge=0, description="나트륨 일일 권장 대비 비율 (%)")
+
+
 class DetailedAnalysis(BaseModel):
     strength: str = Field(min_length=1, description="강점 분석")
     improvement: str = Field(min_length=1, description="개선 포인트")
@@ -78,6 +87,7 @@ class MealPaidResult(BaseModel):
     estimated_calories: int = Field(ge=0, description="추정 칼로리 (kcal)")
     nutrition_ratio: NutritionRatio
     sodium_level: Literal["높음", "보통", "낮음"] = Field(description="나트륨 수준")
+    daily_intake_ratio: DailyIntakeRatio
     vitamin_info: VitaminInfo
     mineral_info: MineralInfo
     detailed_analysis: DetailedAnalysis
