@@ -9,6 +9,17 @@ GPT Vision API 시스템 프롬프트 모음
 - 판단이 애매한 경우의 fallback 원칙만 명시
 """
 
+
+def build_rag_system_prompt(base_prompt: str, rag_context: str) -> str:
+    """
+    RAG 컨텍스트를 기존 시스템 프롬프트 앞에 삽입하여 반환.
+
+    rag_context가 비어있으면 base_prompt를 그대로 반환한다.
+    """
+    if not rag_context:
+        return base_prompt
+    return f"[참고 영양 가이드라인]\n{rag_context}\n\n위 가이드라인을 참고하여 사용자의 건강 상태에 맞는 피드백을 제공하세요.\n\n{base_prompt}"
+
 # ──────────────────────────────────────────────
 # 식단 분석 — 무료 (REQ-HLTH-007)
 # ──────────────────────────────────────────────

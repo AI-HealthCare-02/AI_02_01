@@ -59,7 +59,7 @@ class AIVisionService:
     async def enqueue_meal_free(self, image_base64: str, media_type: str, user_id: int, image_url: str | None = None, risk_factors: str = "") -> str:
         task = _celery_sender.send_task(
             "vision.analyze_meal_free",
-            args=[image_base64, media_type, risk_factors],
+            args=[image_base64, media_type, risk_factors, risk_grade],
         )
         await self._save_task_meta(task.id, user_id, AnalysisTypeEnum.DIET, image_url)
         return task.id
@@ -69,7 +69,7 @@ class AIVisionService:
     async def enqueue_meal_paid(self, image_base64: str, media_type: str, user_id: int, image_url: str | None = None, risk_factors: str = "") -> str:
         task = _celery_sender.send_task(
             "vision.analyze_meal_paid",
-            args=[image_base64, media_type, risk_factors],
+            args=[image_base64, media_type, risk_factors, risk_grade],
         )
         await self._save_task_meta(task.id, user_id, AnalysisTypeEnum.DIET, image_url)
         return task.id

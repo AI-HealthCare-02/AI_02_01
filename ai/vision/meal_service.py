@@ -11,7 +11,7 @@ Meal Analysis Service (REQ-HLTH-007)
 import logging
 
 from .client import call_vision_api
-from .prompts import MEAL_FREE_PROMPT, MEAL_PAID_PROMPT
+from .prompts import MEAL_FREE_PROMPT, MEAL_PAID_PROMPT, build_rag_system_prompt
 from .schemas import MealFreeResult, MealPaidResult
 
 logger = logging.getLogger(__name__)
@@ -25,6 +25,7 @@ class MealService:
         image_bytes: bytes,
         media_type: str,
         risk_factors: str = "",
+        rag_context: str = "",
     ) -> dict:
         """
         무료 식단 분석
@@ -37,12 +38,14 @@ class MealService:
             image_bytes: 업로드된 이미지 바이너리
             media_type: MIME 타입 (image/jpeg 등)
             risk_factors: 사용자 심혈관 위험 요인 (예: "고혈압, 고콜레스테롤")
+            rag_context: RAG 검색 결과 컨텍스트 (비어있으면 기본 프롬프트 사용)
 
         Returns:
-            dict: {"result": MealFreeResult, "usage": UsageInfo}
+            dict: {"result": MealFreeResult}
         """
-        logger.info("식단 무료 분석 시작")
+        logger.info("식단 무료 분석 시작 (RAG=%s)", bool(rag_context))
 
+        system_prompt = build_rag_system_prompt(MEAL_FREE_PROMPT, rag_context)
         user_text = "이 음식 사진을 분석해주세요."
         if risk_factors:
             user_text += f"\n\n사용자 위험 요인: {risk_factors}"
@@ -50,7 +53,7 @@ class MealService:
         response = await call_vision_api(
             image_bytes=image_bytes,
             media_type=media_type,
-            system_prompt=MEAL_FREE_PROMPT,
+            system_prompt=system_prompt,
             user_text=user_text,
             model="gpt-4o-mini",
             detail="low",
@@ -71,6 +74,7 @@ class MealService:
         image_bytes: bytes,
         media_type: str,
         risk_factors: str = "",
+        rag_context: str = "",
     ) -> dict:
         """
         유료 상세 리포트 (-300pt)
@@ -84,16 +88,18 @@ class MealService:
             image_bytes: 업로드된 이미지 바이너리
             media_type: MIME 타입
             risk_factors: 사용자 심혈관 위험 요인 (예: "고혈압, 고콜레스테롤")
+            rag_context: RAG 검색 결과 컨텍스트 (비어있으면 기본 프롬프트 사용)
 
         Returns:
-            dict: {"result": MealPaidResult, "usage": UsageInfo}
+            dict: {"result": MealPaidResult}
 
         Note:
             포인트 차감은 이 함수가 아닌 라우터(엔드포인트)에서 처리.
             서비스는 순수하게 분석만 담당.
         """
-        logger.info("식단 유료 상세 분석 시작")
+        logger.info("식단 유료 상세 분석 시작 (RAG=%s)", bool(rag_context))
 
+        system_prompt = build_rag_system_prompt(MEAL_PAID_PROMPT, rag_context)
         user_text = "이 음식 사진을 상세 분석해주세요."
         if risk_factors:
             user_text += f"\n\n사용자 위험 요인: {risk_factors}"
@@ -101,7 +107,7 @@ class MealService:
         response = await call_vision_api(
             image_bytes=image_bytes,
             media_type=media_type,
-            system_prompt=MEAL_PAID_PROMPT,
+            system_prompt=system_prompt,
             user_text=user_text,
             model="gpt-4o-mini",
             detail="high",
