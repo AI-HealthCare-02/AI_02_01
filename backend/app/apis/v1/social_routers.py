@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.databases import get_db_session
 from app.dependencies.security import get_request_user
 from app.dtos.social import (
+    FeedResponse,
     FriendActionResponse,
     FriendListResponse,
     FriendRequestListResponse,
@@ -117,6 +118,22 @@ async def get_friend_list(
 ) -> Response:
     service = SocialService(session)
     result = await service.get_friend_list(user)
+    return Response(result.model_dump(), status_code=status.HTTP_200_OK)
+
+
+@social_router.get(
+    "/feed",
+    response_model=FeedResponse,
+    status_code=status.HTTP_200_OK,
+    summary="친구 챌린지 피드 조회",
+    description="내 친구들이 진행 중인 챌린지의 가장 최근 인증 기록을 최신순으로 조회한다. 인증 기록이 없는 챌린지는 제외된다.",
+)
+async def get_social_feed(
+    user: Annotated[User, Depends(get_request_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> Response:
+    service = SocialService(session)
+    result = await service.get_feed(user)
     return Response(result.model_dump(), status_code=status.HTTP_200_OK)
 
 

@@ -1,6 +1,7 @@
-from sqlalchemy import and_, delete, or_, select
+from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.challenges import Challenge, ChallengeLog, UserChallenge, UserChallengeStatusEnum
 from app.models.friend_list import FriendList
 from app.models.friendships import Friendship, FriendshipStatusEnum
 from app.models.users import User
@@ -142,6 +143,44 @@ class SocialRepository:
             )
         )
         await self._session.commit()
+
+    async def get_friend_feed(self, user_id: int) -> list[tuple]:
+        """
+        내 친구들의 active 챌린지 중 가장 최근 인증 로그를 조회.
+        인증 기록이 없는 챌린지는 제외된다 (피드 = 활동 기록).
+        """
+        latest_log_subq = (
+            select(
+                ChallengeLog.user_challenge_id,
+                func.max(ChallengeLog.created_at).label("max_created_at"),
+            )
+            .group_by(ChallengeLog.user_challenge_id)
+            .subquery()
+        )
+
+        result = await self._session.execute(
+            select(User, Challenge, ChallengeLog, UserChallenge)
+            .join(FriendList, FriendList.friend_id == User.id)
+            .join(
+                UserChallenge,
+                and_(
+                    UserChallenge.user_id == User.id,
+                    UserChallenge.status == UserChallengeStatusEnum.ACTIVE,
+                ),
+            )
+            .join(Challenge, Challenge.id == UserChallenge.challenge_id)
+            .join(latest_log_subq, latest_log_subq.c.user_challenge_id == UserChallenge.id)
+            .join(
+                ChallengeLog,
+                and_(
+                    ChallengeLog.user_challenge_id == latest_log_subq.c.user_challenge_id,
+                    ChallengeLog.created_at == latest_log_subq.c.max_created_at,
+                ),
+            )
+            .where(FriendList.user_id == user_id)
+            .order_by(ChallengeLog.created_at.desc())
+        )
+        return list(result.all())
 
     async def delete_friendship_by_users(self, user_a: int, user_b: int) -> None:
         """

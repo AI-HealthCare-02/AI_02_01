@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel
 
@@ -82,3 +82,26 @@ class FriendActionResponse(BaseModel):
     """친구 요청 수락/거절/삭제 결과"""
 
     message: str
+
+
+# ──────────────────────────────────────────────
+# 친구 챌린지 피드
+# ──────────────────────────────────────────────
+
+
+class FeedItemResponse(BaseModel):
+    """친구 챌린지 피드 단건"""
+
+    user_id: int
+    nickname: str
+    profile_image: str | None
+    challenge_title: str
+    log_date: date
+    current_streak: int
+    created_at: datetime
+
+
+class FeedResponse(BaseModel):
+    """친구 챌린지 피드 목록"""
+
+    items: list[FeedItemResponse]
