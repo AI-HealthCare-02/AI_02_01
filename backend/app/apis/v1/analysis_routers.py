@@ -16,6 +16,7 @@ from app.dtos.analysis import (
     MigrateGuestAnalysisRequest,
     PredictionResultListResponse,
     PredictionResultResponse,
+    RecalculateRiskRequest,
 )
 from app.models.users import User
 from app.services.analysis import HealthAnalysisService
@@ -113,6 +114,29 @@ async def migrate_guest_analysis(
 ) -> Response:
     service = HealthAnalysisService(session, redis)
     result = await service.migrate_guest_analysis(data.guest_task_id, data.record_id, user)
+    return Response(result.model_dump(), status_code=status.HTTP_200_OK)
+
+
+@analysis_router.post(
+    "/recalculate",
+    response_model=AnalysisTaskResponse,
+    status_code=status.HTTP_200_OK,
+    summary="챌린지 달성 후 위험도 재예측",
+    description=(
+        "달성한 챌린지를 기반으로 건강 수치를 보정한 뒤 위험도를 재예측한다. "
+        "completed_challenges에 달성한 챌린지 키를 전달한다. "
+        "(smoke_7days / alco_7days / active_7days / diet_7days) "
+        "결과 조회는 GET /{task_id}/wait 엔드포인트를 사용한다."
+    ),
+)
+async def recalculate_risk_analysis(
+    data: RecalculateRiskRequest,
+    user: Annotated[User, Depends(get_request_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    redis: Annotated[Redis, Depends(get_redis)],
+) -> Response:
+    service = HealthAnalysisService(session, redis)
+    result = await service.request_recalculate_analysis(data.record_id, data.completed_challenges, user)
     return Response(result.model_dump(), status_code=status.HTTP_200_OK)
 
 
