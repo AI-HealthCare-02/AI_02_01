@@ -1,5 +1,6 @@
 import logging
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,6 +11,9 @@ from app.repositories.user_repository import UserRepository
 from app.services.google_oauth import GoogleOAuthService, GoogleUserInfo
 from app.services.jwt import JwtService
 from app.utils.jwt.tokens import AccessToken, RefreshToken
+
+# 탈퇴 후 계정 복구 가능 기간
+RESTORE_PERIOD_DAYS = 7
 
 # __name__: 현재 모듈 경로(app.services.auth)를 로거 이름으로 사용
 # 로그 출력 시 어떤 파일에서 발생한 로그인지 자동 식별 가능
@@ -58,15 +62,14 @@ class AuthService:
         )
 
     async def _google_login(self, code: str) -> LoginResult:
-        """Google OAuth 인가 코드로 로그인/회원가입 처리"""
+        """Google ID 토큰으로 로그인/회원가입 처리"""
         google_oauth = GoogleOAuthService()
 
-        logger.info("Google 인가 코드 교환 시작")
+        logger.info("Google ID 토큰 검증 시작")
         token_data = await google_oauth.exchange_code(code)
-        logger.info("Google 인가 코드 교환 성공")
-
         google_user: GoogleUserInfo = await google_oauth.get_user_info(token_data["access_token"])
-        logger.info("Google 사용자 정보 조회 성공 - sub: %s, name: %s", google_user.sub, google_user.name)
+        logger.info("Google ID 토큰 검증 성공")
+
 
         user = await self.user_repo.get_user_by_provider_id("google", google_user.sub)
         is_new_user = False
@@ -84,12 +87,44 @@ class AuthService:
             logger.info("기존 사용자 로그인 - user_id: %d", user.id)
 
         if user.is_deleted:
-            logger.warning("비활성화된 계정 로그인 시도 - user_id: %d", user.id)
-            raise HTTPException(
-                status_code=status.HTTP_423_LOCKED,
-                detail="비활성화된 계정입니다.",
-            )
+            is_new_user = await self._handle_withdrawn_user(user, google_user.name)
 
-        tokens = self.jwt_service.issue_jwt_pair(user) # token 발급되는 곳
+        tokens = self.jwt_service.issue_jwt_pair(user)
         logger.info("JWT 토큰 발급 완료 - user_id: %d, is_new_user: %s", user.id, is_new_user)
         return LoginResult(tokens=tokens, user=user, is_new_user=is_new_user)
+
+    async def _handle_withdrawn_user(self, user: User, google_name: str) -> bool:
+        """
+        탈퇴한 사용자의 재로그인 처리.
+
+        - 탈퇴 후 7일 이내: 계정 복구 (기존 데이터 유지, is_new_user=False)
+        - 탈퇴 후 7일 초과: 프로필 완전 초기화 (is_new_user=True → 초기 프로필 설정 필요)
+
+        Returns:
+            is_new_user (bool): 프론트엔드가 초기 프로필 설정 화면으로 안내할지 여부
+        """
+        if user.deleted_at is None:
+            # deleted_at이 없는 비정상 상태 → 복구 처리
+            logger.warning("deleted_at 누락된 탈퇴 계정 복구 - user_id: %d", user.id)
+            await self.user_repo.restore_user(user)
+            return False
+
+        restore_deadline = user.deleted_at + timedelta(days=RESTORE_PERIOD_DAYS)
+        is_restorable = datetime.now() <= restore_deadline
+
+        if is_restorable:
+            # 7일 이내: 기존 데이터 유지하며 계정 복구
+            logger.info(
+                "계정 복구 처리 - user_id: %d, deleted_at: %s, deadline: %s",
+                user.id, user.deleted_at, restore_deadline,
+            )
+            await self.user_repo.restore_user(user)
+            return False
+        else:
+            # 7일 초과: 프로필 초기화 후 신규 사용자로 처리
+            logger.info(
+                "계정 초기화 처리 - user_id: %d, deleted_at: %s (7일 초과)",
+                user.id, user.deleted_at,
+            )
+            await self.user_repo.reset_user(user, nickname=google_name[:20])
+            return True

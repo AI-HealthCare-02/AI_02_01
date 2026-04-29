@@ -1,76 +1,161 @@
 name: CI
 
+# -------------------------------------------------------
+# 언제 이 워크플로우가 실행되는가?
+# - main 또는 develop 브랜치로 향하는 PR이 열리거나 업데이트될 때 실행
+# - push(직접 커밋)가 아니라 PR 단위로 검증하는 것이 핵심
+# -------------------------------------------------------
 on:
   pull_request:
-    branches: [main, develop, dev]
+    branches: [main, develop]
 
 jobs:
-  # 1. FastAPI 백엔드 테스트
-  backend-test:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: backend/app
+  # =======================================================
+  # Job 1. 백엔드 CI (린트 + 포맷 + 테스트)
+  # =======================================================
+  backend-ci:
+    runs-on: ubuntu-latest  # GitHub에서 제공하는 Ubuntu 가상 머신에서 실행
+
+    # -------------------------------------------------------
+    # 테스트용 MySQL 서비스 컨테이너
+    # - job이 시작되기 전에 자동으로 컨테이너를 띄워줌
+    # - 테스트가 끝나면 자동으로 종료됨
+    # -------------------------------------------------------
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: ci_root_password  # CI 전용 root 비밀번호
+          MYSQL_DATABASE: test                    # conftest.py에서 접속하는 DB 이름
+        ports:
+          - 3306:3306  # 호스트(runner) 3306 → 컨테이너 3306 포트 포워딩
+        # MySQL이 완전히 준비될 때까지 대기하는 헬스체크
+        # GitHub Actions는 healthy 상태가 될 때까지 다음 step을 실행하지 않음
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -u root -pci_root_password"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
     steps:
-      - uses: actions/checkout@v3
-      
-      - name: Set up Python
-        uses: actions/setup-python@v4
+      # -------------------------------------------------------
+      # Step 1. 코드 체크아웃
+      # - 현재 PR의 코드를 runner(가상 머신)에 내려받음
+      # - 이 step 없이는 뒤의 모든 step에서 코드에 접근 불가
+      # -------------------------------------------------------
+      - name: 코드 체크아웃
+        uses: actions/checkout@v4
+
+      # -------------------------------------------------------
+      # Step 2. uv 설치
+      # - uv: pip보다 훨씬 빠른 Python 패키지/프로젝트 관리 도구
+      # - 로컬 개발 환경과 동일한 도구를 CI에서도 사용해야
+      #   uv.lock 파일을 기준으로 완전히 동일한 의존성 환경이 재현됨
+      # - pip을 쓰면 uv.lock이 무시되어 버전이 달라질 수 있음
+      # -------------------------------------------------------
+      - name: uv 설치
+        uses: astral-sh/setup-uv@v5
         with:
-          python-version: '3.11'
+          version: "latest"
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          # pytest와 필요한 패키지를 명시적으로 설치
-          pip install pytest pytest-asyncio 
-          if [ -f "pyproject.toml" ]; then
-            pip install . 
-          elif [ -f "app/requirements.txt" ]; then
-            pip install -r app/requirements.txt
-          fi
+      # -------------------------------------------------------
+      # Step 3. Python 3.13 설치
+      # - pyproject.toml의 requires-python = ">=3.13" 과 일치
+      # - Python 버전이 다르면 문법/표준 라이브러리 차이로
+      #   "내 컴퓨터에서는 됐는데 CI에서 실패" 현상이 생김
+      # -------------------------------------------------------
+      - name: Python 3.13 설치
+        run: uv python install 3.13
 
-      - name: Run Tests
-        run: |
-          # app 폴더를 파이썬 경로에 추가
-          export PYTHONPATH=$PYTHONPATH:$(pwd)/app
-          if [ -d "app/tests" ]; then 
-            pytest app/tests -v
-          else 
-            echo "No tests found in app/tests"
-          fi
+      # -------------------------------------------------------
+      # Step 4. 의존성 설치
+      # - uv sync: uv.lock을 기준으로 정확히 동일한 버전을 설치
+      # - --all-groups: dev 그룹(pytest, ruff, mypy 등)까지 포함
+      # - 결과물은 .venv/ 에 격리된 가상환경으로 생성됨
+      # -------------------------------------------------------
+      - name: 의존성 설치
+        run: uv sync --all-groups
 
-  # 2. AI Worker 검증
+      # -------------------------------------------------------
+      # Step 5. Ruff 린트 검사
+      # - ruff check: 코드 문법/스타일 오류를 검사
+      # - 예: 미사용 import, 변수명 규칙, 불필요한 코드 등
+      # - 위반 사항이 있으면 exit code 1 반환 → CI 실패
+      # - pyproject.toml의 [tool.ruff.lint] 규칙을 기준으로 검사
+      # -------------------------------------------------------
+      - name: Ruff 린트 검사
+        run: uv run ruff check backend/
+
+      # -------------------------------------------------------
+      # Step 6. Ruff 포맷 검사
+      # - ruff format --check: 코드 포맷이 기준과 다른 파일이 있는지 확인
+      # - 실제로 파일을 수정하지는 않고 "다르면 실패"만 함
+      # - 로컬에서 ruff format 실행 후 커밋해야 통과
+      # - 팀 전체 코드 스타일을 자동으로 강제할 수 있음
+      # -------------------------------------------------------
+      - name: Ruff 포맷 검사
+        run: uv run ruff format --check backend/
+
+      # -------------------------------------------------------
+      # Step 7. pytest 실행
+      # - PYTHONPATH=backend: backend/ 를 파이썬 탐색 경로에 추가
+      #   → "from app.core import config" 같은 임포트가 가능해짐
+      #   → backend/app/ 이 app 패키지로 인식됨
+      # - DB 관련 환경변수: MySQL 서비스 컨테이너에 접속하기 위한 값
+      #   (config.py의 기본값을 덮어씀)
+      # - GOOGLE_CLIENT_ID/SECRET: config.py에서 필수 필드이므로
+      #   CI에서 누락되면 pydantic ValidationError 발생 → 더미값 주입
+      # -------------------------------------------------------
+      - name: pytest 실행
+        env:
+          PYTHONPATH: backend                   # app 패키지 임포트 경로
+          DB_HOST: 127.0.0.1                    # GitHub Actions runner의 localhost
+          DB_PORT: 3306
+          DB_USER: root
+          DB_PASSWORD: ci_root_password         # MySQL 서비스에서 설정한 비밀번호와 동일
+          DB_NAME: test                         # conftest.py가 접속하는 DB 이름
+          GOOGLE_CLIENT_ID: ci-dummy            # 실제 OAuth 사용 안 함, ValidationError 방지용
+          GOOGLE_CLIENT_SECRET: ci-dummy
+        run: uv run pytest backend/app/tests/ -v
+
+  # =======================================================
+  # Job 2. AI 검증
+  # - backend-ci와 병렬로 실행됨 (서로 독립적인 job)
+  # - 백엔드 테스트가 끝날 때까지 기다리지 않음
+  # =======================================================
   ai-validate:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ai_worker
+
     steps:
-      - uses: actions/checkout@v3
-      
-      - name: Set up Python
-        uses: actions/setup-python@v4
+      - name: 코드 체크아웃
+        uses: actions/checkout@v4
+
+      - name: uv 설치
+        uses: astral-sh/setup-uv@v5
         with:
-          python-version: '3.11'
+          version: "latest"
 
-      - name: Install ML dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install pytest
-          if [ -f "ai_worker/requirements.txt" ]; then
-            pip install -r ai_worker/requirements.txt
-          else
-            # ai_worker 폴더 내에 파일이 없으면 루트의 설정을 따름
-            pip install . 
-          fi
+      - name: Python 3.13 설치
+        run: uv python install 3.13
 
-      - name: AI Logic Check
+      # -------------------------------------------------------
+      # AI 그룹 의존성만 설치
+      # - pyproject.toml의 [dependency-groups] ai 그룹만 설치
+      # - ML 라이브러리(scikit-learn, langfuse 등)는 무거우므로
+      #   백엔드 테스트 job과 분리해서 각자 필요한 것만 설치
+      # -------------------------------------------------------
+      - name: AI 의존성 설치
+        run: uv sync --group ai
+
+      # -------------------------------------------------------
+      # AI 테스트 실행
+      # - ai/tests/ 디렉터리가 있을 때만 실행
+      # - 없으면 메시지만 출력하고 성공으로 처리 (실패 아님)
+      # -------------------------------------------------------
+      - name: AI 테스트 실행
         run: |
-          # ai_worker 폴더를 파이썬 경로에 추가
-          export PYTHONPATH=$PYTHONPATH:$(pwd)/ai_worker
-          if [ -d "ai_worker/tests" ]; then
-            pytest ai_worker/tests -v --ignore=ai_worker/tests/test_train.py
+          if [ -d "ai/tests" ]; then
+            uv run pytest ai/tests/ -v
           else
-            echo "No AI tests found in ai_worker/tests"
+            echo "ai/tests 디렉터리가 없음 — 스킵"
           fi

@@ -1,5 +1,4 @@
 import logging
-from datetime import datetime
 
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,7 +19,7 @@ class UserManageService:
         """
         초기 프로필 설정 (Google 로그인 직후 1회).
         gender 이미 설정된 경우 409 Conflict 반환.
-        age는 birth_year 기반 자동 계산.
+        age는 birth_year hybrid_property로 동적 계산되므로 DB에 저장하지 않는다.
         """
         if user.gender is not None:
             logger.warning("초기 프로필 재설정 시도 - user_id: %d", user.id)
@@ -29,10 +28,9 @@ class UserManageService:
                 detail="초기 프로필이 이미 설정되어 있습니다. 성별은 변경할 수 없습니다.",
             )
 
-        update_data = {
+        update_data: dict = {
             "gender": data.gender,
             "birth_year": data.birth_year,
-            "age": self._calculate_age(data.birth_year),
         }
         if data.nickname is not None:
             update_data["nickname"] = data.nickname
@@ -44,25 +42,20 @@ class UserManageService:
         return user
 
     async def update_profile(self, user: User, data: ProfileUpdateRequest) -> User:
-        """닉네임, 프로필 이미지, 출생 연도를 수정한다. birth_year 변경 시 age 자동 재계산."""
+        """닉네임, 프로필 이미지, 출생 연도를 수정한다. age는 birth_year 기반 동적 계산이므로 별도 저장 불필요."""
         update_data = data.model_dump(exclude_none=True)
-
-        # birth_year 변경 시 age 자동 재계산
-        if "birth_year" in update_data:
-            update_data["age"] = self._calculate_age(update_data["birth_year"])
-
         await self.repo.update_instance(user=user, data=update_data)
         return user
 
-    async def withdraw_user(self, user: User) -> None:
-        """사용자의 계정과 모든 관련 데이터를 영구적으로 삭제한다."""
-        await self.repo.hard_delete_user(user)
+    async def withdraw_user(self, user: User, reason: str | None = None) -> None:
+        """
+        사용자 탈퇴 처리 (Soft Delete).
+        is_deleted=True, deleted_at=현재 시각으로 마킹하며 실제 레코드는 유지된다.
+        탈퇴 사유는 선택 입력이며 withdraw_reason 컬럼에 저장된다.
+        이후 인증 시 get_request_user에서 자동으로 접근이 차단된다.
+        """
+        await self.repo.soft_delete_user(user, reason=reason)
 
     async def get_dashboard(self, user: User) -> DashboardResponse:
         """마이페이지 대시보드에 표시할 건강 현황 요약 정보를 반환한다."""
         return DashboardResponse.model_validate(user)
-
-    @staticmethod
-    def _calculate_age(birth_year: int) -> int:
-        """출생 연도 기반 나이 계산 (현재 연도 - 출생 연도 + 1)"""
-        return datetime.now().year - birth_year + 1

@@ -3,19 +3,27 @@
 ML1: XGBoost + SHAP
 """
 
+import logging
 import os
+
 import joblib
 import numpy as np
 import pandas as pd
 import shap
 
+logger = logging.getLogger(__name__)
+
 MODEL_PATH = os.getenv('ML1_MODEL_PATH', 'ai/models/xgboost_model.pkl')
 SCALER_PATH = os.getenv('ML1_SCALER_PATH', 'ai/models/scaler.pkl')
 
-
+logger.info("모델 로딩 시작 - path: %s", MODEL_PATH)
 model = joblib.load(MODEL_PATH)
 scaler = joblib.load(SCALER_PATH)
+logger.info("모델 로딩 완료")
+
+logger.info("SHAP TreeExplainer 초기화 시작")
 explainer = shap.TreeExplainer(model)
+logger.info("SHAP TreeExplainer 초기화 완료")
 
 # ── 상수 정의
 
@@ -29,7 +37,7 @@ FACTOR_MAP = {
     'hypertension': '고혈압',        
     'high_cholesterol': '고콜레스테롤', 
     'obesity': '비만',              
-    'age_bmi': '고령·과체중',         
+    'age_bmi': '나이·체중 관리 필요',
     'cholesterol': '고콜레스테롤',
     'gluc': '고혈당',
     'bmi': '과체중',
@@ -41,12 +49,12 @@ FACTOR_MAP = {
     'pulse_pressure': '고혈압',
     'risk_class': '복합위험군',
     'bp_ratio': '고혈압',           # 추가
-    'age_hypertension': '고령+고혈압',  # 추가
-    'age_cholesterol': '고령+고콜레스테롤',  # 추가
+    'age_hypertension': '나이·혈압 관리 필요',  # 추가
+    'age_cholesterol': '나이·콜레스테롤 관리 필요',  # 추가
     'age_ap_hi': '고혈압',          # 추가
     'smoke_alco': '흡연+음주',      # 추가
     'age_active': '운동부족',       # 추가
-    'bp_bmi': '비만+고혈압',        # 추가
+    'bp_bmi': '체중·혈압 관리 필요',  # 추가
 }
 
 # 챌린지 달성 시 보정값 (의학 문헌 기반)
@@ -217,12 +225,16 @@ def predict(user_data: dict) -> dict:
         }
     """
     # 전처리
+    logger.info("전처리 시작")
     df_input = preprocess(user_data)
+    logger.info("전처리 완료")
 
-    # 예측
+    # 예측 (OMP_NUM_THREADS=1 설정으로 Celery fork 환경 교착 방지)
+    logger.info("XGBoost 예측 시작")
     risk_percent = float(
         model.predict_proba(df_input)[0][1] * 100
     )
+    logger.info("XGBoost 예측 완료 - risk_percent: %.1f", risk_percent)
 
     # 결과 조합
     return {
@@ -290,3 +302,30 @@ if __name__ == '__main__':
         print(f"{k}: {v}")
 
     print(f"\n위험도 변화: {result['risk_percent']} → {result2['risk_percent']}%")
+
+    # ── 챌린지 맞춤 추천 함수
+RISK_FACTOR_MAP = {
+    '고혈압': '고혈압',
+    '고령+고혈압': '고혈압',
+    '고콜레스테롤': '고콜레스테롤',
+    '고령+고콜레스테롤': '고콜레스테롤',
+    '고혈당': '고혈당',
+    '비만+고혈압': '과체중',
+    '고령·과체중': '과체중',
+    '흡연': '흡연자',
+    '흡연+음주': '음주자',
+    '운동부족': '과체중',
+}
+
+def recommend_challenges(top_risk_factors: list) -> list:
+    """
+    top_risk_factors 기반으로 챌린지 추천
+    Returns: 매칭된 target_risk_factors 목록
+    """
+    targets = set()
+    for factor in top_risk_factors:
+        mapped = RISK_FACTOR_MAP.get(factor)
+        if mapped:
+            targets.add(mapped)
+    targets.add('공통')  # 항상 공통 챌린지 포함
+    return list(targets)

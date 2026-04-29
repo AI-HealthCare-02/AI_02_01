@@ -33,16 +33,31 @@ class Config(BaseSettings):
     COOKIE_DOMAIN: str = "localhost"
 
     JWT_ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 30 # 30 days
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 30  # 30 days
     REFRESH_TOKEN_EXPIRE_MINUTES: int = 14 * 24 * 60
     JWT_LEEWAY: int = 5
 
-    # Redis 설정 (DB 1번 사용, Celery broker는 DB 0번)
-    REDIS_URL: str = "redis://localhost:6379/1"
+    # Redis DB 할당
+    # DB 0: Celery Broker  (task 대기열)
+    # DB 1: Celery Backend (task 완료 결과 저장)
+    # DB 2: ML1 Cache      (분석 결과 캐시, 24시간 TTL)
+    # DB 3: Pub/Sub        (태스크 완료 실시간 알림, SSE 스트리밍용)
+    CELERY_BROKER_URL: str = "redis://localhost:6379/0"
+    CELERY_BACKEND_URL: str = "redis://localhost:6379/1"
+    REDIS_CACHE_URL: str = "redis://localhost:6379/2"
+    REDIS_PUBSUB_URL: str = "redis://localhost:6379/3"
 
     # CORS 허용 도메인 (쉼표 구분 문자열)
-    CORS_ORIGINS: str = "http://localhost:5173,https://frontend-one-omega-59.vercel.app"
+    CORS_ORIGINS: str = "http://localhost:5173,https://frontend-one-omega-59.vercel.app,https://myhealthbuddy.vercel.app/"
+
+    FRONTEND_URL: str = "http://localhost:3000"
 
     GOOGLE_CLIENT_ID: str
     GOOGLE_CLIENT_SECRET: str
-    GOOGLE_REDIRECT_URI: str
+    GOOGLE_REDIRECT_URI: str = "http://localhost:8000/api/v1/auth/google/callback"
+
+    # AWS S3
+    AWS_ACCESS_KEY_ID: str = ""
+    AWS_SECRET_ACCESS_KEY: str = ""
+    AWS_S3_BUCKET_NAME: str = ""
+    AWS_S3_REGION: str = "ap-northeast-2"

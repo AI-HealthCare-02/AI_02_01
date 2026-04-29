@@ -1,4 +1,78 @@
-from pydantic import BaseModel
+from datetime import date, datetime
+from typing import Annotated, Literal
+
+from pydantic import BaseModel, Field, computed_field, model_validator
+
+from app.dtos.base import BaseSerializerModel
+
+# ──────────────────────────────────────────────
+# Request DTOs
+# ──────────────────────────────────────────────
+
+
+class GuestAnalysisRequest(BaseModel):
+    """비회원 AI 건강 분석 요청 (DB 기록 없이 직접 수치 입력)"""
+
+    birth_date: Annotated[
+        date,
+        Field(description="생년월일 (YYYY-MM-DD). 만 나이는 자동 계산됨."),
+    ]
+    gender: Annotated[Literal["M", "F"], Field(description="성별 (M: 남성, F: 여성)")]
+    height: Annotated[float, Field(ge=100, le=300, description="키 (cm)")]
+    weight: Annotated[float, Field(ge=10, le=500, description="몸무게 (kg)")]
+    systolic_bp: Annotated[int, Field(ge=50, le=300, description="수축기 혈압 (mmHg)")]
+    diastolic_bp: Annotated[int, Field(ge=30, le=200, description="이완기 혈압 (mmHg)")]
+    total_cholesterol: Annotated[int, Field(ge=50, le=500, description="총 콜레스테롤 (mg/dL)")]
+    glucose: Annotated[int, Field(ge=30, le=600, description="공복 혈당 (mg/dL)")]
+    smoke_yn: Annotated[bool, Field(description="흡연 여부")]
+    alcohol_yn: Annotated[bool, Field(description="음주 여부")]
+    exercise_yn: Annotated[bool, Field(description="규칙적 운동 여부")]
+
+    @computed_field
+    @property
+    def age(self) -> int:
+        """생년월일 기반 만 나이 자동 계산 (요청 시점 기준)"""
+        today = date.today()
+        age = today.year - self.birth_date.year
+        # 올해 생일이 아직 지나지 않았으면 1 감산
+        if (today.month, today.day) < (self.birth_date.month, self.birth_date.day):
+            age -= 1
+        return age
+
+    @model_validator(mode="after")
+    def validate_birth_date(self) -> "GuestAnalysisRequest":
+        """생년월일 유효성 검증 (미래 날짜 / 나이 범위 초과 차단)"""
+        today = date.today()
+
+        if self.birth_date > today:
+            raise ValueError("생년월일은 오늘 이후일 수 없습니다.")
+
+        if self.age < 1:
+            raise ValueError("나이는 최소 1세 이상이어야 합니다.")
+
+        if self.age > 120:
+            raise ValueError("유효하지 않은 생년월일입니다. (120세 초과)")
+
+        return self
+
+
+class MigrateGuestAnalysisRequest(BaseModel):
+    """게스트 분석 결과 → 회원 계정 이전 요청"""
+    guest_task_id: Annotated[str, Field(description="게스트 분석 task_id")]
+    record_id: Annotated[int, Field(description="회원 건강검진 기록 ID")]
+
+
+class RecalculateRiskRequest(BaseModel):
+    """챌린지 달성 후 위험도 재예측 요청"""
+    record_id: Annotated[int, Field(description="건강검진 기록 ID")]
+    completed_challenges: Annotated[
+        list[str],
+        Field(
+            description="달성한 챌린지 키 목록 (smoke_7days / alco_7days / active_7days / diet_7days)",
+            examples=[["smoke_7days", "active_7days"]],
+        ),
+    ]
+
 
 # ──────────────────────────────────────────────
 # Response DTOs
@@ -18,3 +92,27 @@ class AnalysisResultResponse(BaseModel):
     status: str  # "pending" | "success" | "failed"
     data: dict | None = None  # {"ml1_predict": {...}, "ml1_comment": {...}}
     error: str | None = None
+
+
+class PredictionResultResponse(BaseSerializerModel):
+    """DB에 저장된 예측 결과 단건 응답"""
+
+    id: int
+    record_id: int
+    trigger_type: str
+    cvd_risk_percent: float
+    cvd_age: int
+    risk_level: str
+    top_risk_factors: list | None  # SHAP 기반 위험 요인 문자열 목록
+    ai_evaluation: str | None
+    ai_alert: str | None
+    ai_missions: list | None  # 챌린지 추천 목록 (각 항목: title, action, reason)
+    ai_encouragement: str | None
+    created_at: datetime
+
+
+class PredictionResultListResponse(BaseModel):
+    """예측 결과 목록 응답"""
+
+    items: list[PredictionResultResponse]
+    total: int

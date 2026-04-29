@@ -11,5 +11,6 @@ GPT Vision API 기반 식단 분석 + 운동 캡처 인증
 
 from .meal_service import MealService
 from .exercise_service import ExerciseService
+from .checkup_service import CheckupService
 
-__all__ = ["MealService", "ExerciseService"]
+__all__ = ["MealService", "ExerciseService", "CheckupService"]

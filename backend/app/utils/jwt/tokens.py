@@ -78,7 +78,7 @@ class Token:
     @classmethod
     def for_user(cls, user: User) -> Self:
         token = cls()
-        token["user_id"] = user.id
+        token["id"] = user.id
         return token
 
 
@@ -89,7 +89,7 @@ class AccessToken(Token):
 
 class RefreshToken(Token):
     token_type = "refresh"
-    lifetime = timedelta(days=config.REFRESH_TOKEN_EXPIRE_MINUTES)
+    lifetime = timedelta(minutes=config.REFRESH_TOKEN_EXPIRE_MINUTES)
     no_copy_claims = ("type", "exp", "jti")
 
     @property

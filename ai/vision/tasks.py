@@ -10,14 +10,37 @@ Vision API Celery Tasks (v2 — 피드백 반영)
 
 import asyncio
 import base64
+import json
 import logging
+import os
+import time
+
+import redis as sync_redis
 
 from ai.celery_app import celery_app
-from .meal_service import MealService
-from .exercise_service import ExerciseService
+
 from .client import ALLOWED_MEDIA_TYPES
+from .exercise_service import ExerciseService
+from .meal_service import MealService
 
 logger = logging.getLogger(__name__)
+
+# ──────────────────────────────────────────────
+# Pub/Sub 발행 Redis 클라이언트 (DB 3)
+# ──────────────────────────────────────────────
+_REDIS_BASE = os.getenv("REDIS_URL", "redis://localhost:6379/0").rsplit("/", 1)[0]
+_PUBSUB_REDIS_URL = os.getenv("REDIS_PUBSUB_URL", _REDIS_BASE + "/3")
+_pubsub_redis = sync_redis.from_url(_PUBSUB_REDIS_URL, decode_responses=True)
+
+
+def _publish_result(task_id: str, payload: dict) -> None:
+    """태스크 완료 결과를 Redis Pub/Sub 채널에 발행한다."""
+    channel = f"task:result:{task_id}"
+    try:
+        _pubsub_redis.publish(channel, json.dumps(payload))
+        logger.info("Pub/Sub 발행 완료 - channel: %s", channel)
+    except Exception as pub_err:
+        logger.warning("Pub/Sub 발행 실패 (무시) - %s", pub_err)
 
 # ──────────────────────────────────────────────
 # 서비스 인스턴스 (Worker 프로세스당 1개)
@@ -58,8 +81,8 @@ def validate_input(image_base64: str, media_type: str) -> bytes:
     # 3) base64 디코딩
     try:
         image_bytes = base64.b64decode(image_base64)
-    except Exception:
-        raise InvalidInputError("base64 디코딩 실패 — 이미지 데이터가 손상되었습니다.")
+    except Exception as decode_err:
+        raise InvalidInputError("base64 디코딩 실패 — 이미지 데이터가 손상되었습니다.") from decode_err
 
     # 4) 디코딩된 데이터 크기 검증
     if len(image_bytes) == 0:
@@ -80,7 +103,7 @@ def success_response(task_name: str, task_id: str, result: dict) -> dict:
         "status": "success",
         "task_name": task_name,
         "task_id": task_id,
-        "data": result,         # {"result": {...}, "usage": {...}}
+        "data": result,         # {"result": {...}}
         "error": None,
     }
 
@@ -130,18 +153,48 @@ def _run_vision_task(self, task_name: str, image_base64: str, media_type: str, s
 
     # ── Step 2: 서비스 호출 (실패 시 retry 함) ──
     try:
+        _t0 = time.perf_counter()
         result = asyncio.run(service_call(image_bytes))
-        logger.info(f"[{task_name}] 완료 | task_id={task_id}")
-        return success_response(task_name, task_id, result)
+        llm_ms = round((time.perf_counter() - _t0) * 1000)
+        logger.info(f"[{task_name}] 완료 | llm_ms={llm_ms} | task_id={task_id}")
+        response = success_response(task_name, task_id, result)
+
+        # Pub/Sub 발행 (SSE 구독 중인 클라이언트에 실시간 전달)
+        _publish_result(task_id, response)
+
+        return response
 
     except Exception as exc:
         logger.error(f"[{task_name}] API 오류 (retry 시도) | task_id={task_id} | {exc}")
-        raise self.retry(exc=exc)
+        raise self.retry(exc=exc) from exc
 
 
 # ══════════════════════════════════════════════
 # 4. Task 정의
 # ══════════════════════════════════════════════
+
+def _retrieve_nutrition_context(risk_grade: str, risk_factors: str) -> str:
+    """
+    nutrition_knowledge 컬렉션에서 RAG 검색을 수행하고 포맷된 컨텍스트를 반환한다.
+
+    risk_grade가 없으면 필터 없이 전체 문서에서 검색한다.
+    실패 시 빈 문자열을 반환하여 서비스 중단을 방지한다.
+    """
+    try:
+        from ai.core import config
+        from ai.rag.retriever import build_nutrition_rag_query, format_context_for_prompt, retrieve_health_context
+
+        rag_query = build_nutrition_rag_query(risk_grade, risk_factors)
+        rag_chunks = retrieve_health_context(
+            query=rag_query,
+            risk_grade=risk_grade,
+            collection=config.QDRANT_COLLECTION_NUTRITION,
+        )
+        return format_context_for_prompt(rag_chunks)
+    except Exception as e:
+        logger.warning("영양 RAG 검색 실패 (무시): %s", e)
+        return ""
+
 
 # ── Task 1: 식단 무료 분석 ──
 @celery_app.task(
@@ -150,16 +203,26 @@ def _run_vision_task(self, task_name: str, image_base64: str, media_type: str, s
     max_retries=2,
     default_retry_delay=5,
 )
-def analyze_meal_free(self, image_base64: str, media_type: str, risk_factors: str = ""):
+def analyze_meal_free(self, image_base64: str, media_type: str, risk_factors: str = "", risk_grade: str = ""):
     """
     식단 무료 분석 (+100pt)
 
     FastAPI에서 호출:
         from ai.vision.tasks import analyze_meal_free
-        task = analyze_meal_free.delay(image_base64, media_type, risk_factors)
+        task = analyze_meal_free.delay(image_base64, media_type, risk_factors, risk_grade)
         result = task.get()  # 또는 task.id로 상태 조회
     """
-    return _run_vision_task(
+    # 전체 태스크 시작 시각
+    task_start = time.perf_counter()
+
+    # RAG 컨텍스트 검색 (risk_grade 없으면 필터 없이 전체 검색)
+    _t0 = time.perf_counter()
+    rag_context = _retrieve_nutrition_context(risk_grade, risk_factors)
+    rag_search_ms = round((time.perf_counter() - _t0) * 1000)
+    logger.info("무료_분석 RAG 검색 완료 - %dms", rag_search_ms)
+
+    # RAG 적용 결과
+    response = _run_vision_task(
         self=self,
         task_name="식단_무료_분석",
         image_base64=image_base64,
@@ -168,8 +231,16 @@ def analyze_meal_free(self, image_base64: str, media_type: str, risk_factors: st
             image_bytes=img_bytes,
             media_type=media_type,
             risk_factors=risk_factors,
+            rag_context=rag_context,
         ),
     )
+
+    # 구간별 소요 시간 로그 (응답에는 포함하지 않음)
+    if response.get("status") == "success":
+        total_ms = round((time.perf_counter() - task_start) * 1000)
+        logger.info("무료_분석 구간 시간 - rag: %dms, total: %dms", rag_search_ms, total_ms)
+
+    return response
 
 
 # ── Task 2: 식단 유료 상세 리포트 ──
@@ -179,14 +250,24 @@ def analyze_meal_free(self, image_base64: str, media_type: str, risk_factors: st
     max_retries=2,
     default_retry_delay=5,
 )
-def analyze_meal_paid(self, image_base64: str, media_type: str, risk_factors: str = ""):
+def analyze_meal_paid(self, image_base64: str, media_type: str, risk_factors: str = "", risk_grade: str = ""):
     """
     식단 유료 상세 리포트 (-300pt)
 
     FastAPI에서 호출:
-        task = analyze_meal_paid.delay(image_base64, media_type, risk_factors)
+        task = analyze_meal_paid.delay(image_base64, media_type, risk_factors, risk_grade)
     """
-    return _run_vision_task(
+    # 전체 태스크 시작 시각
+    task_start = time.perf_counter()
+
+    # RAG 컨텍스트 검색 (risk_grade 없으면 필터 없이 전체 검색)
+    _t0 = time.perf_counter()
+    rag_context = _retrieve_nutrition_context(risk_grade, risk_factors)
+    rag_search_ms = round((time.perf_counter() - _t0) * 1000)
+    logger.info("유료_분석 RAG 검색 완료 - %dms", rag_search_ms)
+
+    # RAG 적용 결과
+    response = _run_vision_task(
         self=self,
         task_name="식단_유료_분석",
         image_base64=image_base64,
@@ -195,8 +276,16 @@ def analyze_meal_paid(self, image_base64: str, media_type: str, risk_factors: st
             image_bytes=img_bytes,
             media_type=media_type,
             risk_factors=risk_factors,
+            rag_context=rag_context,
         ),
     )
+
+    # 구간별 소요 시간 로그 (응답에는 포함하지 않음)
+    if response.get("status") == "success":
+        total_ms = round((time.perf_counter() - task_start) * 1000)
+        logger.info("유료_분석 구간 시간 - rag: %dms, total: %dms", rag_search_ms, total_ms)
+
+    return response
 
 
 # ── Task 3: 운동 캡처 인증 ──

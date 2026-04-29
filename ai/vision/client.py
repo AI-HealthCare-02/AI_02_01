@@ -6,11 +6,12 @@ OpenAI 클라이언트 초기화 + 공통 Vision API 호출 함수
 FastAPI에서 바로 await 가능
 """
 
-import os
-import json
 import base64
+import json
 import logging
-from openai import AsyncOpenAI
+import os
+
+from langfuse.openai import AsyncOpenAI
 
 logger = logging.getLogger(__name__)
 
@@ -137,6 +138,7 @@ async def call_vision_api(
     model: str = "gpt-4o-mini",
     detail: str = "low",
     max_tokens: int = 1000,
+    temperature: float = 1.0,
 ) -> dict:
     """
     Vision API 호출 → JSON dict 반환
@@ -151,16 +153,7 @@ async def call_vision_api(
         max_tokens: 최대 응답 토큰
 
     Returns:
-        dict: GPT 응답을 파싱한 JSON + 메타데이터
-        {
-            "result": { ... },       # GPT 분석 결과
-            "usage": {
-                "prompt_tokens": int,
-                "completion_tokens": int,
-                "total_tokens": int,
-                "estimated_cost": float,
-            }
-        }
+        dict: {"result": { ... }}  # GPT 분석 결과 (토큰/비용은 로그로만 기록)
 
     Raises:
         ValueError: 이미지 형식 오류
@@ -196,6 +189,7 @@ async def call_vision_api(
                     },
                 ],
                 max_tokens=max_tokens,
+                temperature=temperature,
             )
 
             raw_content = response.choices[0].message.content.strip()
@@ -218,15 +212,7 @@ async def call_vision_api(
                 f"비용: ${estimated_cost:.6f}"
             )
 
-            return {
-                "result": result,
-                "usage": {
-                    "prompt_tokens": usage.prompt_tokens,
-                    "completion_tokens": usage.completion_tokens,
-                    "total_tokens": usage.total_tokens,
-                    "estimated_cost": estimated_cost,
-                },
-            }
+            return {"result": result}
 
         except json.JSONDecodeError as e:
             last_error = e
