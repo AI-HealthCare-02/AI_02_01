@@ -194,7 +194,7 @@ jobs:
       - name: 배포 후 헬스체크
         run: |
           sleep 15
-          curl --fail --retry 5 --retry-delay 5 https://${{ secrets.SERVER_HOST }}/health
+          curl --fail --retry 5 --retry-delay 5 https://${{ secrets.SERVER_DOMAIN }}/health
 
       # -------------------------------------------------------
       # Step 10. Discord 배포 알림
@@ -216,4 +216,4 @@ jobs:
             **커밋 메시지:** ${{ github.event.head_commit.message }}
             **배포자:** ${{ github.actor }}
           color: ${{ job.status == 'success' && '0x00FF00' || '0xFF0000' }}
-          username: "배포봇"
+          username: "마이헬스버디 배포 담당자"
