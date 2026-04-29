@@ -112,5 +112,5 @@ async def health_check():
     # 상태: true, 메시지: 정상 동작 안내
     return {
         "status": True,
-        "message": "마이헬스버디 서버 정상 동작 합니다!"
+        "message": "마이헬스버디 서버 정상 동작 합니다!",
     }
