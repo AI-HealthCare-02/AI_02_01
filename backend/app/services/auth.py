@@ -25,6 +25,7 @@ SUPPORTED_PROVIDERS = {"google"}
 @dataclass
 class LoginResult:
     """로그인 처리 결과를 담는 데이터 클래스"""
+
     tokens: dict[str, AccessToken | RefreshToken]
     user: User
     is_new_user: bool
@@ -69,7 +70,6 @@ class AuthService:
         token_data = await google_oauth.exchange_code(code)
         google_user: GoogleUserInfo = await google_oauth.get_user_info(token_data["access_token"])
         logger.info("Google ID 토큰 검증 성공")
-
 
         user = await self.user_repo.get_user_by_provider_id("google", google_user.sub)
         is_new_user = False
@@ -116,7 +116,9 @@ class AuthService:
             # 7일 이내: 기존 데이터 유지하며 계정 복구
             logger.info(
                 "계정 복구 처리 - user_id: %d, deleted_at: %s, deadline: %s",
-                user.id, user.deleted_at, restore_deadline,
+                user.id,
+                user.deleted_at,
+                restore_deadline,
             )
             await self.user_repo.restore_user(user)
             return False
@@ -124,7 +126,8 @@ class AuthService:
             # 7일 초과: 프로필 초기화 후 신규 사용자로 처리
             logger.info(
                 "계정 초기화 처리 - user_id: %d, deleted_at: %s (7일 초과)",
-                user.id, user.deleted_at,
+                user.id,
+                user.deleted_at,
             )
             await self.user_repo.reset_user(user, nickname=google_name[:20])
             return True

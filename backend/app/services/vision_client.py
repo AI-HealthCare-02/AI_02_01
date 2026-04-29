@@ -39,14 +39,11 @@ def encode_image_bytes(image_bytes: bytes) -> str:
 
 def validate_media_type(media_type: str) -> str:
     if media_type not in ALLOWED_MEDIA_TYPES:
-        raise ValueError(
-            f"지원하지 않는 이미지 형식입니다: {media_type}. "
-            f"지원 형식: {', '.join(ALLOWED_MEDIA_TYPES)}"
-        )
+        raise ValueError(f"지원하지 않는 이미지 형식입니다: {media_type}. 지원 형식: {', '.join(ALLOWED_MEDIA_TYPES)}")
     return media_type
 
 
-def _extract_json(raw: str) -> str:
+def _extract_json(raw: str) -> str:  # noqa: C901
     stripped = raw.strip()
 
     if stripped.startswith("{"):
@@ -168,7 +165,11 @@ async def call_vision_api(
 
             logger.info(
                 "Vision API 호출 성공 (시도 %d/%d) | 모델: %s | 토큰: %d | 비용: $%.6f",
-                attempt, MAX_RETRIES, model, usage.total_tokens, estimated_cost,
+                attempt,
+                MAX_RETRIES,
+                model,
+                usage.total_tokens,
+                estimated_cost,
             )
 
             return {
