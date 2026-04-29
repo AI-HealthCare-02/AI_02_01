@@ -70,11 +70,7 @@ class CheckupService:
             issues.append(f"total_cholesterol 범위 이상: {r.total_cholesterol}")
             r = r.model_copy(update={"total_cholesterol": None})
 
-        if (
-            r.systolic_bp is not None
-            and r.diastolic_bp is not None
-            and r.systolic_bp < r.diastolic_bp
-        ):
+        if r.systolic_bp is not None and r.diastolic_bp is not None and r.systolic_bp < r.diastolic_bp:
             issues.append(f"혈압 역전: systolic={r.systolic_bp} < diastolic={r.diastolic_bp}")
             r = r.model_copy(update={"systolic_bp": None, "diastolic_bp": None})
 

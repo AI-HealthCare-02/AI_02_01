@@ -4,13 +4,14 @@ from pydantic import BaseModel, Field, model_validator
 
 from app.models.challenges import VerificationMethodEnum
 
-
 # ──────────────────────────────────────────────
 # Request DTOs
 # ──────────────────────────────────────────────
 
+
 class ChallengeLogRequest(BaseModel):
     """챌린지 인증 요청"""
+
     verification_type: VerificationMethodEnum = Field(
         ...,
         description="인증 방식: checklist / input / cv",
@@ -42,8 +43,10 @@ class ChallengeLogRequest(BaseModel):
 # Response DTOs
 # ──────────────────────────────────────────────
 
+
 class ChallengeResponse(BaseModel):
     """챌린지 풀 단건 응답"""
+
     id: int
     category: str
     title: str
@@ -57,11 +60,13 @@ class ChallengeResponse(BaseModel):
 
 class ChallengeListResponse(BaseModel):
     """챌린지 목록 응답"""
+
     challenges: list[ChallengeResponse]
 
 
 class UserChallengeResponse(BaseModel):
     """사용자 챌린지 참여 응답"""
+
     id: int
     user_id: int
     challenge_id: int
@@ -73,6 +78,7 @@ class UserChallengeResponse(BaseModel):
 
 class ChallengeLogResponse(BaseModel):
     """챌린지 인증 응답"""
+
     id: int
     user_challenge_id: int
     log_date: date
@@ -86,6 +92,7 @@ class ChallengeLogResponse(BaseModel):
 
 class MessageResponse(BaseModel):
     """단순 메시지 응답 (포기 등)"""
+
     message: str
 
 
@@ -93,13 +100,16 @@ class MessageResponse(BaseModel):
 # Error Response DTOs (Swagger 문서 표시용)
 # ──────────────────────────────────────────────
 
+
 class ErrorResponse(BaseModel):
     """에러 응답 공통 형식"""
+
     detail: str
 
 
 class ChallengeRecommendItem(BaseModel):
     """AI 추천 챌린지 단건"""
+
     challenge_id: int
     title: str
     reason: str
@@ -107,4 +117,5 @@ class ChallengeRecommendItem(BaseModel):
 
 class ChallengeRecommendResponse(BaseModel):
     """AI 챌린지 추천 응답"""
+
     recommendations: list[ChallengeRecommendItem]

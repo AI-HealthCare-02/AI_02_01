@@ -185,12 +185,23 @@ jobs:
           PROD_ENV_FILE: ${{ secrets.PROD_ENV_FILE }}
 
       # -------------------------------------------------------
-      # Step 9. Discord 배포 알림
+      # Step 9. 배포 후 헬스체크
+      # - EC2 배포 완료 후 컨테이너가 정상 기동했는지 확인
+      # - sleep 15: docker compose up 직후 앱이 완전히 뜨기까지 대기
+      # - --retry 5 --retry-delay 5: 최대 25초간 재시도 (기동 지연 대비)
+      # - 실패 시 이 step이 실패 상태로 종료 → Discord 알림에 빨간불
+      # -------------------------------------------------------
+      - name: 배포 후 헬스체크
+        run: |
+          sleep 15
+          curl --fail --retry 5 --retry-delay 5 https://${{ secrets.SERVER_HOST }}/health
+
+      # -------------------------------------------------------
+      # Step 10. Discord 배포 알림
       # - if: always() → 배포 성공/실패 모두 알림 전송
       #   (if를 생략하면 앞 step이 실패했을 때 이 step은 실행되지 않음)
       # - job.status: 워크플로우 전체 결과 ('success' | 'failure' | 'cancelled')
-      # - DISCORD_WEBHOOK: Discord 채널 웹훅 URL (GitHub Secret으로 관리)
-      #   발급 방법: Discord 채널 → 설정 → 연동 → 웹후크 → 새 웹후크
+      #   헬스체크 step 이후에 실행되므로 헬스체크 실패도 반영됨
       # -------------------------------------------------------
       - name: Discord 배포 알림
         if: always()

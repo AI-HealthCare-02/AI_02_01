@@ -48,7 +48,9 @@ class Config(BaseSettings):
     REDIS_PUBSUB_URL: str = "redis://localhost:6379/3"
 
     # CORS 허용 도메인 (쉼표 구분 문자열)
-    CORS_ORIGINS: str = "http://localhost:5173,https://frontend-one-omega-59.vercel.app,https://myhealthbuddy.vercel.app/"
+    CORS_ORIGINS: str = (
+        "http://localhost:5173,https://frontend-one-omega-59.vercel.app,https://myhealthbuddy.vercel.app/"
+    )
 
     FRONTEND_URL: str = "http://localhost:3000"
 

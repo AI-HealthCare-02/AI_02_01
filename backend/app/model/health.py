@@ -1,10 +1,11 @@
-from sqlalchemy import Column, Boolean, String, DateTime, ForeignKey, Integer, Numeric, JSON, Text
 from app.database import Base
+from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Integer, Numeric, String, Text
+
 
 # 건강검진 수치 입력 테이블
 class HealthRecord(Base):
     __tablename__ = "health_records"
- 
+
     id = Column(
         Integer,
         primary_key=True,
@@ -14,7 +15,7 @@ class HealthRecord(Base):
     user_id = Column(
         Integer,
         ForeignKey("users.id"),
-        nullable=True,                  # 비로그인 사용자도 입력 가능
+        nullable=True,  # 비로그인 사용자도 입력 가능
         comment="FK → users",
     )
     systolic_bp = Column(
@@ -38,17 +39,17 @@ class HealthRecord(Base):
         comment="혈당 (mg/dL)",
     )
     height = Column(
-        Numeric(5, 1),                  # 예: 175.5
+        Numeric(5, 1),  # 예: 175.5
         nullable=False,
         comment="키 (cm)",
     )
     weight = Column(
-        Numeric(5, 1),                  # 예: 72.3
+        Numeric(5, 1),  # 예: 72.3
         nullable=False,
         comment="몸무게 (kg)",
     )
     bmi = Column(
-        Numeric(4, 1),                  # 예: 23.6 / 서버에서 자동 계산
+        Numeric(4, 1),  # 예: 23.6 / 서버에서 자동 계산
         nullable=True,
         comment="BMI 자동 계산",
     )
@@ -72,11 +73,12 @@ class HealthRecord(Base):
         nullable=False,
         comment="입력 시각",
     )
- 
+
+
 # 심혈관 위험도 예측 결과 테이블
 class PredictionResult(Base):
     __tablename__ = "prediction_results"
- 
+
     id = Column(
         Integer,
         primary_key=True,
@@ -95,7 +97,7 @@ class PredictionResult(Base):
         comment="new_record / challenge_streak / manual",
     )
     cvd_risk_percent = Column(
-        Numeric(5, 2),                  # 예: 32.50 (0.00 ~ 100.00)
+        Numeric(5, 2),  # 예: 32.50 (0.00 ~ 100.00)
         nullable=False,
         comment="심혈관 발생 확률 (0~100%)",
     )
@@ -127,7 +129,7 @@ class PredictionResult(Base):
     )
     ai_alert = Column(
         Text,
-        nullable=True,                  # 위험 수치 없으면 null
+        nullable=True,  # 위험 수치 없으면 null
         comment="ChatGPT 위험 경고 (없으면 null)",
     )
     ai_missions = Column(
@@ -149,10 +151,12 @@ class PredictionResult(Base):
         nullable=False,
         comment="생성 시각",
     )
+
+
 # CV(Computer Vision) 분석 결과 테이블.
 class CvAnalysisLog(Base):
     __tablename__ = "cv_analysis_logs"
- 
+
     id = Column(
         Integer,
         primary_key=True,
