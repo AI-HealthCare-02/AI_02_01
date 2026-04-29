@@ -1,10 +1,11 @@
-from sqlalchemy import Column, Date, DateTime, ForeignKey, Integer, String, Text
 from app.database import Base
+from sqlalchemy import Column, Date, DateTime, ForeignKey, Integer, String, Text
+
 
 # 챌린지 마스터 테이블
 class Challenge(Base):
     __tablename__ = "challenges"
- 
+
     id = Column(
         Integer,
         primary_key=True,
@@ -32,10 +33,11 @@ class Challenge(Base):
         comment="checklist / input / cv",
     )
 
+
 # 사용자 챌린지 참여 테이블
 class UserChallenge(Base):
     __tablename__ = "user_challenges"
- 
+
     id = Column(
         Integer,
         primary_key=True,
@@ -73,14 +75,15 @@ class UserChallenge(Base):
     )
     completed_at = Column(
         DateTime,
-        nullable=True,                  # 완료 전까지는 null
+        nullable=True,  # 완료 전까지는 null
         comment="완료 시각",
     )
- 
+
+
 # 챌린지 일별 인증 기록 테이블
 class ChallengeLog(Base):
     __tablename__ = "challenge_logs"
- 
+
     id = Column(
         Integer,
         primary_key=True,
@@ -105,13 +108,13 @@ class ChallengeLog(Base):
     )
     input_value = Column(
         String,
-        nullable=True,                  # checklist / cv 방식이면 null
+        nullable=True,  # checklist / cv 방식이면 null
         comment="수치 입력값 (개피수, 걸음수 등)",
     )
     cv_result_id = Column(
         Integer,
         ForeignKey("cv_analysis_logs.id"),
-        nullable=True,                  # cv 방식일 때만 사용
+        nullable=True,  # cv 방식일 때만 사용
         comment="FK → cv_analysis_logs (cv 인증 시)",
     )
     created_at = Column(
@@ -119,11 +122,12 @@ class ChallengeLog(Base):
         nullable=False,
         comment="기록 생성 시각",
     )
- 
+
+
 # 뱃지 마스터 테이블
 class Badge(Base):
     __tablename__ = "badges"
- 
+
     id = Column(
         Integer,
         primary_key=True,
@@ -156,12 +160,12 @@ class Badge(Base):
         # - 전설 뱃지  : +300pt
         # - 건강 개선   : +500pt (심혈관 나이 -5세)
     )
- 
+
+
 # 사용자 뱃지 획득 기록 테이블
 class UserBadge(Base):
- 
     __tablename__ = "user_badges"
- 
+
     id = Column(
         Integer,
         primary_key=True,
@@ -185,11 +189,12 @@ class UserBadge(Base):
         nullable=False,
         comment="획득 시각",
     )
- 
+
+
 # 포인트 변동 이력 테이블
-class PointLog(Base): 
+class PointLog(Base):
     __tablename__ = "point_logs"
- 
+
     id = Column(
         Integer,
         primary_key=True,
@@ -217,4 +222,3 @@ class PointLog(Base):
         nullable=False,
         comment="변동 시각",
     )
- 
