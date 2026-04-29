@@ -45,7 +45,24 @@ services:
       timeout: 5s
       retries: 5
 
-  # 3. API Server (FastAPI)
+  # 3. Qdrant (Vector DB — RAG 검색용)
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: qdrant
+    restart: always
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage  # 컨테이너 재시작 후에도 벡터 데이터 유지
+    networks:
+      - ws
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/readyz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 4. API Server (FastAPI)
   fastapi:
     container_name: fastapi
     image: ${DOCKER_USER}/${DOCKER_REPOSITORY}:app-${APP_VERSION}  # APP_VERSION은 빌드된 이미지의 버전관리를 위함입니다. v1.0.0 형식으로 사용합니다.
@@ -63,8 +80,10 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      qdrant:
+        condition: service_healthy
 
-  # 4. AI Worker (Model 학습 및 추론)
+  # 5. AI Worker (Model 학습 및 추론)
   ai-worker:
     container_name: ai-worker
     image: ${DOCKER_USER}/${DOCKER_REPOSITORY}:ai-${AI_WORKER_VERSION}  # AI_WORKER_VERSION은 빌드된 이미지의 버전관리를 위함입니다. V1.0.0 형식으로 사용합니다.
@@ -79,8 +98,10 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      qdrant:
+        condition: service_healthy
 
-  # 5. Nginx (웹 서버 - 요청 리버스 프록시로 전달)
+  # 6. Nginx (웹 서버 - 요청 리버스 프록시로 전달)
   nginx:
     container_name: nginx
     image: nginx:latest
@@ -98,7 +119,7 @@ services:
     depends_on:
       - fastapi
 
-  # 6. certbot: SSL 인증서 발급담당
+  # 7. certbot: SSL 인증서 발급담당
   certbot:
     image: certbot/certbot
     container_name: auto-certbot
@@ -116,6 +137,8 @@ volumes:
     name: static_volume
   media_volume:
     name: media_volume
+  qdrant_data:
+    name: qdrant_data
   certbot-conf:
     name: certbot-conf
   certbot-www:
