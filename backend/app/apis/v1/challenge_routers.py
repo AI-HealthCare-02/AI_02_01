@@ -17,6 +17,7 @@ from fastapi.responses import JSONResponse as Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.databases import get_db_session
+from app.dependencies.security import get_request_user
 from app.dtos.challenge import (
     ChallengeListResponse,
     ChallengeLogRequest,
@@ -27,9 +28,8 @@ from app.dtos.challenge import (
     MessageResponse,
     UserChallengeResponse,
 )
-from app.services.challenge_service import ChallengeService
-from app.dependencies.security import get_request_user
 from app.models.users import User
+from app.services.challenge_service import ChallengeService
 
 # /api/v1/challenges 경로의 라우터
 challenge_router = APIRouter(prefix="/challenges", tags=["challenges"])
@@ -42,13 +42,13 @@ user_challenge_router = APIRouter(prefix="/user-challenges", tags=["challenges"]
 # 1. 챌린지 목록 조회
 # ══════════════════════════════════════════════
 
+
 @challenge_router.get(
     "",
     response_model=ChallengeListResponse,
     status_code=status.HTTP_200_OK,
     summary="챌린지 목록 조회",
-    description="전체 챌린지 풀 목록을 조회합니다. "
-                "프론트에서 카테고리별 탭 필터링에 사용됩니다.",
+    description="전체 챌린지 풀 목록을 조회합니다. 프론트에서 카테고리별 탭 필터링에 사용됩니다.",
     responses={
         200: {"description": "챌린지 목록 조회 성공", "model": ChallengeListResponse},
     },
@@ -84,13 +84,13 @@ async def get_challenges(
 # 2. 챌린지 선택 (참여)
 # ══════════════════════════════════════════════
 
+
 @challenge_router.post(
     "/{challenge_id}/join",
     response_model=UserChallengeResponse,
     status_code=status.HTTP_201_CREATED,
     summary="챌린지 참여 (시작하기)",
-    description="챌린지를 선택하여 참여를 시작합니다. "
-                "user_challenges 테이블에 active 상태로 등록됩니다.",
+    description="챌린지를 선택하여 참여를 시작합니다. user_challenges 테이블에 active 상태로 등록됩니다.",
     responses={
         201: {"description": "챌린지 참여 성공", "model": UserChallengeResponse},
         404: {"description": "존재하지 않는 챌린지", "model": ErrorResponse},
@@ -126,13 +126,13 @@ async def join_challenge(
 # 3. 챌린지 포기
 # ══════════════════════════════════════════════
 
+
 @user_challenge_router.patch(
     "/{user_challenge_id}/abandon",
     response_model=MessageResponse,
     status_code=status.HTTP_200_OK,
     summary="챌린지 포기",
-    description="진행 중인 챌린지를 포기합니다. "
-                "status가 abandoned로 변경됩니다.",
+    description="진행 중인 챌린지를 포기합니다. status가 abandoned로 변경됩니다.",
     responses={
         200: {"description": "포기 처리 완료", "model": MessageResponse},
         400: {"description": "이미 완료/포기된 챌린지", "model": ErrorResponse},
@@ -163,14 +163,15 @@ async def abandon_challenge(
 # 4. 챌린지 인증
 # ══════════════════════════════════════════════
 
+
 @user_challenge_router.post(
     "/{user_challenge_id}/log",
     response_model=ChallengeLogResponse,
     status_code=status.HTTP_201_CREATED,
     summary="챌린지 인증",
     description="오늘의 챌린지 수행을 인증합니다. "
-                "하루 1회만 가능하며, streak이 자동으로 업데이트됩니다. "
-                "챌린지 성공/실패는 종료일 기준으로 최종 판정됩니다.",
+    "하루 1회만 가능하며, streak이 자동으로 업데이트됩니다. "
+    "챌린지 성공/실패는 종료일 기준으로 최종 판정됩니다.",
     responses={
         201: {"description": "인증 성공", "model": ChallengeLogResponse},
         400: {"description": "이미 완료/포기된 챌린지", "model": ErrorResponse},
@@ -214,14 +215,15 @@ async def log_daily(
 # 5. AI 맞춤 챌린지 추천
 # ══════════════════════════════════════════════
 
+
 @challenge_router.get(
     "/recommend",
     response_model=ChallengeRecommendResponse,
     status_code=status.HTTP_200_OK,
     summary="AI 맞춤 챌린지 추천",
     description="RAG 기반으로 사용자의 건강 데이터를 분석하여 "
-                "맞춤 챌린지 Top 3를 추천합니다. "
-                "AI 건강 분석 결과가 없으면 404를 반환합니다.",
+    "맞춤 챌린지 Top 3를 추천합니다. "
+    "AI 건강 분석 결과가 없으면 404를 반환합니다.",
     responses={
         200: {"description": "추천 성공", "model": ChallengeRecommendResponse},
         404: {"description": "AI 분석 결과 없음", "model": ErrorResponse},

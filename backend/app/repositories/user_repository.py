@@ -23,9 +23,7 @@ class UserRepository:
         사용자 ID(PK)로 단일 사용자를 조회한다.
         없으면 None 반환.
         """
-        result = await self._session.execute(
-            select(self._model).where(self._model.id == user_id)
-        )
+        result = await self._session.execute(select(self._model).where(self._model.id == user_id))
         return result.scalar_one_or_none()
 
     async def get_user_by_provider_id(self, provider: str, provider_id: str) -> User | None:
@@ -41,9 +39,7 @@ class UserRepository:
         )
         return result.scalar_one_or_none()
 
-    async def create_oauth_user(
-        self, provider: str, provider_id: str, nickname: str, email: str | None = None
-    ) -> User:
+    async def create_oauth_user(self, provider: str, provider_id: str, nickname: str, email: str | None = None) -> User:
         """
         신규 OAuth 사용자를 생성하고 DB에 저장한다.
         commit 후 refresh하여 DB에서 자동 생성된 값(id, created_at 등)을 반영한다.

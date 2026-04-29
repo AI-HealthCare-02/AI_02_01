@@ -58,12 +58,14 @@ class GuestAnalysisRequest(BaseModel):
 
 class MigrateGuestAnalysisRequest(BaseModel):
     """게스트 분석 결과 → 회원 계정 이전 요청"""
+
     guest_task_id: Annotated[str, Field(description="게스트 분석 task_id")]
     record_id: Annotated[int, Field(description="회원 건강검진 기록 ID")]
 
 
 class RecalculateRiskRequest(BaseModel):
     """챌린지 달성 후 위험도 재예측 요청"""
+
     record_id: Annotated[int, Field(description="건강검진 기록 ID")]
     completed_challenges: Annotated[
         list[str],

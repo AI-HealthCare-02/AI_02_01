@@ -77,27 +77,21 @@ jobs:
         run: uv sync --all-groups
 
       # -------------------------------------------------------
-      # Step 5. Ruff 린트 검사
+      # Step 5. Ruff 린트 + 포맷 검사 (단일 step으로 통합)
       # - ruff check: 코드 문법/스타일 오류를 검사
-      # - 예: 미사용 import, 변수명 규칙, 불필요한 코드 등
+      #   예: 미사용 import, 변수명 규칙, 불필요한 코드 등
+      # - ruff format --check: 코드 포맷이 기준과 다른 파일이 있는지 확인
+      #   실제로 파일을 수정하지는 않고 "다르면 실패"만 함
       # - 위반 사항이 있으면 exit code 1 반환 → CI 실패
       # - pyproject.toml의 [tool.ruff.lint] 규칙을 기준으로 검사
       # -------------------------------------------------------
-      - name: Ruff 린트 검사
-        run: uv run ruff check backend/
+      - name: Ruff 린트 + 포맷 검사
+        run: |
+          uv run ruff check backend/
+          uv run ruff format --check backend/
 
       # -------------------------------------------------------
-      # Step 6. Ruff 포맷 검사
-      # - ruff format --check: 코드 포맷이 기준과 다른 파일이 있는지 확인
-      # - 실제로 파일을 수정하지는 않고 "다르면 실패"만 함
-      # - 로컬에서 ruff format 실행 후 커밋해야 통과
-      # - 팀 전체 코드 스타일을 자동으로 강제할 수 있음
-      # -------------------------------------------------------
-      - name: Ruff 포맷 검사
-        run: uv run ruff format --check backend/
-
-      # -------------------------------------------------------
-      # Step 7. pytest 실행
+      # Step 6. pytest 실행
       # - PYTHONPATH=backend: backend/ 를 파이썬 탐색 경로에 추가
       #   → "from app.core import config" 같은 임포트가 가능해짐
       #   → backend/app/ 이 app 패키지로 인식됨
@@ -105,6 +99,8 @@ jobs:
       #   (config.py의 기본값을 덮어씀)
       # - GOOGLE_CLIENT_ID/SECRET: config.py에서 필수 필드이므로
       #   CI에서 누락되면 pydantic ValidationError 발생 → 더미값 주입
+      # - GOOGLE_REDIRECT_URI: config.py에 기본값이 있으나 CI 환경에서
+      #   명시적으로 주입해 환경 간 불일치를 방지
       # -------------------------------------------------------
       - name: pytest 실행
         env:
@@ -116,6 +112,7 @@ jobs:
           DB_NAME: test                         # conftest.py가 접속하는 DB 이름
           GOOGLE_CLIENT_ID: ci-dummy            # 실제 OAuth 사용 안 함, ValidationError 방지용
           GOOGLE_CLIENT_SECRET: ci-dummy
+          GOOGLE_REDIRECT_URI: http://localhost:8000/api/v1/auth/google/callback
         run: uv run pytest backend/app/tests/ -v
 
   # =======================================================

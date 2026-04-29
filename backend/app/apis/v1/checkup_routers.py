@@ -9,9 +9,9 @@ from typing import Annotated
 
 from fastapi import APIRouter, File, HTTPException, UploadFile, status
 
+from app.dtos.ai_vision import ErrorResponse
 from app.schemas.checkup import CheckupResponse
 from app.services.checkup_service import CheckupService
-from app.dtos.ai_vision import ErrorResponse
 
 _ALLOWED_MEDIA_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
 _MAX_FILE_SIZE = 20 * 1024 * 1024  # 20MB

@@ -29,16 +29,12 @@ class ChallengeRepository:
 
     async def get_all_challenges(self) -> list[Challenge]:
         """전체 챌린지 목록 조회"""
-        result = await self.session.execute(
-            select(Challenge)
-        )
+        result = await self.session.execute(select(Challenge))
         return list(result.scalars().all())
 
     async def get_challenge_by_id(self, challenge_id: int) -> Challenge | None:
         """챌린지 단건 조회 (존재 여부 확인용)"""
-        result = await self.session.execute(
-            select(Challenge).where(Challenge.id == challenge_id)
-        )
+        result = await self.session.execute(select(Challenge).where(Challenge.id == challenge_id))
         return result.scalar_one_or_none()
 
     # ══════════════════════════════════════════
@@ -47,14 +43,10 @@ class ChallengeRepository:
 
     async def get_user_challenge_by_id(self, user_challenge_id: int) -> UserChallenge | None:
         """사용자 챌린지 단건 조회"""
-        result = await self.session.execute(
-            select(UserChallenge).where(UserChallenge.id == user_challenge_id)
-        )
+        result = await self.session.execute(select(UserChallenge).where(UserChallenge.id == user_challenge_id))
         return result.scalar_one_or_none()
 
-    async def get_active_user_challenge(
-        self, user_id: int, challenge_id: int
-    ) -> UserChallenge | None:
+    async def get_active_user_challenge(self, user_id: int, challenge_id: int) -> UserChallenge | None:
         """해당 유저가 이 챌린지에 이미 active로 참여 중인지 확인 (중복 참여 방지)"""
         result = await self.session.execute(
             select(UserChallenge).where(
@@ -65,9 +57,7 @@ class ChallengeRepository:
         )
         return result.scalar_one_or_none()
 
-    async def create_user_challenge(
-        self, user_id: int, challenge_id: int, start_date: date
-    ) -> UserChallenge:
+    async def create_user_challenge(self, user_id: int, challenge_id: int, start_date: date) -> UserChallenge:
         """챌린지 참여 등록 (user_challenges INSERT)"""
         user_challenge = UserChallenge(
             user_id=user_id,
@@ -81,18 +71,14 @@ class ChallengeRepository:
         await self.session.refresh(user_challenge)
         return user_challenge
 
-    async def update_status(
-        self, user_challenge: UserChallenge, new_status: UserChallengeStatusEnum
-    ) -> UserChallenge:
+    async def update_status(self, user_challenge: UserChallenge, new_status: UserChallengeStatusEnum) -> UserChallenge:
         """챌린지 상태 변경 (active → abandoned / completed)"""
         user_challenge.status = new_status
         await self.session.commit()
         await self.session.refresh(user_challenge)
         return user_challenge
 
-    async def update_streak(
-        self, user_challenge: UserChallenge, new_streak: int
-    ) -> None:
+    async def update_streak(self, user_challenge: UserChallenge, new_streak: int) -> None:
         """연속 달성 일수 업데이트"""
         user_challenge.current_streak = new_streak
         await self.session.commit()
@@ -101,9 +87,7 @@ class ChallengeRepository:
     # challenge_logs (인증 기록)
     # ══════════════════════════════════════════
 
-    async def get_log_by_date(
-        self, user_challenge_id: int, log_date: date
-    ) -> ChallengeLog | None:
+    async def get_log_by_date(self, user_challenge_id: int, log_date: date) -> ChallengeLog | None:
         """해당 날짜에 이미 인증했는지 확인 (하루 1회 제한)"""
         result = await self.session.execute(
             select(ChallengeLog).where(
@@ -137,9 +121,7 @@ class ChallengeRepository:
     async def count_logs(self, user_challenge_id: int) -> int:
         """해당 챌린지의 총 인증 횟수 조회 (완료 판정용)"""
         result = await self.session.execute(
-            select(func.count()).where(
-                ChallengeLog.user_challenge_id == user_challenge_id
-            )
+            select(func.count()).where(ChallengeLog.user_challenge_id == user_challenge_id)
         )
         return result.scalar() or 0
 

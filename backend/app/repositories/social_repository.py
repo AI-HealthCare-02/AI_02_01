@@ -67,9 +67,7 @@ class SocialRepository:
         친구 요청 ID(PK)로 단건 조회.
         없으면 None 반환.
         """
-        result = await self._session.execute(
-            select(Friendship).where(Friendship.id == request_id)
-        )
+        result = await self._session.execute(select(Friendship).where(Friendship.id == request_id))
         return result.scalar_one_or_none()
 
     async def update_friendship_status(self, friendship: Friendship, new_status: FriendshipStatusEnum) -> None:

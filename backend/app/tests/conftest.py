@@ -11,32 +11,29 @@ from app.main import app
 
 TEST_DATABASE_URL = f"mysql+asyncmy://{config.DB_USER}:{config.DB_PASSWORD}@{config.DB_HOST}:{config.DB_PORT}/test"
 
-test_engine = create_async_engine(TEST_DATABASE_URL, echo=False)
-test_session_factory = async_sessionmaker(bind=test_engine, class_=AsyncSession, expire_on_commit=False)
 
-
-@pytest_asyncio.fixture(scope="session", autouse=True)
-async def setup_test_db():
-    async with test_engine.begin() as conn:
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
+async def test_engine_fixture():
+    engine = create_async_engine(TEST_DATABASE_URL, echo=False)
+    async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    yield
-    async with test_engine.begin() as conn:
+    yield engine
+    async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
-    await test_engine.dispose()
+    await engine.dispose()
 
 
-@pytest_asyncio.fixture(autouse=True)
-async def db_session() -> AsyncGenerator[AsyncSession, None]:
-    async with test_session_factory() as session:
-        # 테스트용 세션을 FastAPI 의존성에 오버라이드
+@pytest_asyncio.fixture(loop_scope="session")
+async def db_session(test_engine_fixture) -> AsyncGenerator[AsyncSession, None]:
+    session_factory = async_sessionmaker(bind=test_engine_fixture, class_=AsyncSession, expire_on_commit=False)
+    async with session_factory() as session:
         app.dependency_overrides[get_db_session] = lambda: session
         yield session
-        # 테스트 후 데이터 정리
         await session.rollback()
     app.dependency_overrides.clear()
 
 
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(loop_scope="session")
 async def client() -> AsyncGenerator[AsyncClient, None]:
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         yield ac

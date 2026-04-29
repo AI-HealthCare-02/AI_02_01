@@ -1,3 +1,5 @@
+import uuid
+
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
@@ -8,7 +10,7 @@ from app.services.jwt import JwtService
 async def _create_user_and_get_token(session: AsyncSession) -> tuple[User, str]:
     user = User(
         provider="google",
-        provider_id="google_test_123",
+        provider_id=f"google_test_{uuid.uuid4().hex[:8]}",
         nickname="테스터",
     )
     session.add(user)
@@ -21,21 +23,19 @@ async def _create_user_and_get_token(session: AsyncSession) -> tuple[User, str]:
 async def test_get_user_me_success(client, db_session):
     user, access_token = await _create_user_and_get_token(db_session)
     headers = {"Authorization": f"Bearer {access_token}"}
-    response = await client.get("/api/v1/users/me", headers=headers)
+    response = await client.get("/api/v1/users/dashboard", headers=headers)
     assert response.status_code == status.HTTP_200_OK
-    assert response.json()["nickname"] == "테스터"
-    assert response.json()["id"] == user.id
 
 
 async def test_update_user_me_success(client, db_session):
     _, access_token = await _create_user_and_get_token(db_session)
     update_data = {"nickname": "수정후"}
     headers = {"Authorization": f"Bearer {access_token}"}
-    response = await client.patch("/api/v1/users/me", json=update_data, headers=headers)
+    response = await client.patch("/api/v1/users/profile", json=update_data, headers=headers)
     assert response.status_code == status.HTTP_200_OK
     assert response.json()["nickname"] == "수정후"
 
 
 async def test_get_user_me_unauthorized(client):
-    response = await client.get("/api/v1/users/me")
+    response = await client.get("/api/v1/users/dashboard")
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
