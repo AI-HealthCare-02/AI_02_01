@@ -7,17 +7,17 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(name)s | %(levelname)s | %(message)s",
-)
-logger = logging.getLogger("api.access")
-
 from app.apis.v1 import v1_routers
 from app.core.config import Config
 from app.core.redis import close_redis, init_redis
 from app.database import Base
 from app.db.databases import engine
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(name)s | %(levelname)s | %(message)s",
+)
+logger = logging.getLogger("api.access")
 
 
 @asynccontextmanager

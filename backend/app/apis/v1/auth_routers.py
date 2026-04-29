@@ -39,6 +39,7 @@ async def google_login() -> RedirectResponse:
         "access_type": "offline",
     }
     import logging
+
     logging.getLogger(__name__).info("Google login redirect_uri: %s", config.GOOGLE_REDIRECT_URI)
     return RedirectResponse(f"{GOOGLE_AUTH_URL}?{urlencode(params)}")
 
@@ -91,14 +92,16 @@ async def google_callback(
     auth_service = AuthService(session)
     result = await auth_service.social_login(provider="google", code=code)
 
-    params = urlencode({
-        "access_token": str(result.tokens["access_token"]),
-        "is_new_user": str(result.is_new_user).lower(),
-        "user_id": result.user.id,
-        "email": result.user.email or "",
-        "name": result.user.nickname or "",
-        "picture": result.user.profile_image or "",
-    })
+    params = urlencode(
+        {
+            "access_token": str(result.tokens["access_token"]),
+            "is_new_user": str(result.is_new_user).lower(),
+            "user_id": result.user.id,
+            "email": result.user.email or "",
+            "name": result.user.nickname or "",
+            "picture": result.user.profile_image or "",
+        }
+    )
     redirect = RedirectResponse(f"{config.FRONTEND_URL}/login/callback?{params}")
     redirect.set_cookie(
         key="refresh_token",

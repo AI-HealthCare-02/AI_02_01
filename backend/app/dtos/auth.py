@@ -2,10 +2,10 @@ from pydantic import BaseModel
 
 from app.dtos.base import BaseSerializerModel
 
-
 # ──────────────────────────────────────────────
 # Request DTOs
 # ──────────────────────────────────────────────
+
 
 class SocialLoginRequest(BaseModel):
     code: str
@@ -15,8 +15,10 @@ class SocialLoginRequest(BaseModel):
 # Response DTOs
 # ──────────────────────────────────────────────
 
+
 class LoginUserResponse(BaseSerializerModel):
     """로그인 응답에 포함될 사용자 정보"""
+
     id: int
     email: str | None
     provider: str
@@ -29,6 +31,7 @@ class LoginUserResponse(BaseSerializerModel):
 
 class SocialLoginResponse(BaseModel):
     """소셜 로그인/회원가입 통합 응답"""
+
     is_new_user: bool
     access_token: str
     user: LoginUserResponse
@@ -42,6 +45,8 @@ class TokenRefreshResponse(BaseModel):
 # Error Response DTOs (Swagger 문서 표시용)
 # ──────────────────────────────────────────────
 
+
 class ErrorResponse(BaseModel):
     """에러 응답 공통 형식"""
+
     detail: str

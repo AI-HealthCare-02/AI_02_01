@@ -14,8 +14,6 @@ import base64
 import logging
 from typing import Annotated
 
-logger = logging.getLogger(__name__)
-
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import JSONResponse as Response
 from redis.asyncio import Redis
@@ -33,6 +31,8 @@ from app.models.users import User
 from app.services.ai_vision_service import AIVisionService
 from app.utils.pubsub import wait_task_result
 from app.utils.s3 import upload_image
+
+logger = logging.getLogger(__name__)
 
 # 허용 MIME 타입 (OpenAI Vision API 지원 형식)
 _ALLOWED_MEDIA_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
