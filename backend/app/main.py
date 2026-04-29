@@ -105,3 +105,8 @@ app.add_middleware(
 )
 
 app.include_router(v1_routers)
+
+
+@app.get("/health", tags=["system"], summary="서버 상태 확인")
+async def health_check():
+    return {"status": "ok"}
