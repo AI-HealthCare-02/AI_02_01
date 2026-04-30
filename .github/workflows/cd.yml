@@ -174,7 +174,7 @@ jobs:
             docker compose up -d --no-build --no-deps fastapi ai-worker
 
             echo "6) nginx 설정 반영..."
-            docker compose exec -T nginx nginx -s reload
+            docker compose restart nginx
 
             echo "7) 구버전 이미지 정리..."
             docker image prune -f
