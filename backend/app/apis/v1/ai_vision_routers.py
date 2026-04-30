@@ -14,8 +14,6 @@ import base64
 import logging
 from typing import Annotated
 
-logger = logging.getLogger(__name__)
-
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import JSONResponse as Response
 from redis.asyncio import Redis
@@ -33,6 +31,8 @@ from app.models.users import User
 from app.services.ai_vision_service import AIVisionService
 from app.utils.pubsub import wait_task_result
 from app.utils.s3 import upload_image
+
+logger = logging.getLogger(__name__)
 
 # 허용 MIME 타입 (OpenAI Vision API 지원 형식)
 _ALLOWED_MEDIA_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
@@ -92,6 +92,7 @@ async def analyze_meal_free(
     session: Annotated[AsyncSession, Depends(get_db_session)],
     redis: Annotated[Redis, Depends(get_redis)],
     risk_factors: Annotated[str, Form(description="사용자 위험 요인 (예: 고혈압, 당뇨)")] = "",
+    risk_grade: Annotated[str, Form(description="심혈관 위험 등급 (낮음/보통/중간/높음/매우높음)")] = "",
 ) -> Response:
     image_bytes = await image.read()
     image_base64, media_type = _validate_and_encode(image, image_bytes)
@@ -108,6 +109,7 @@ async def analyze_meal_free(
         user_id=current_user.id,
         image_url=image_url,
         risk_factors=risk_factors,
+        risk_grade=risk_grade,
     )
     return Response(
         content=TaskResponse(
@@ -141,6 +143,7 @@ async def analyze_meal_paid(
     session: Annotated[AsyncSession, Depends(get_db_session)],
     redis: Annotated[Redis, Depends(get_redis)],
     risk_factors: Annotated[str, Form(description="사용자 위험 요인 (예: 고혈압, 당뇨)")] = "",
+    risk_grade: Annotated[str, Form(description="심혈관 위험 등급 (낮음/보통/중간/높음/매우높음)")] = "",
 ) -> Response:
     # TODO: 포인트 차감 로직 추가 (current_user.id 사용)
     image_bytes = await image.read()
@@ -158,6 +161,7 @@ async def analyze_meal_paid(
         user_id=current_user.id,
         image_url=image_url,
         risk_factors=risk_factors,
+        risk_grade=risk_grade,
     )
     return Response(
         content=TaskResponse(

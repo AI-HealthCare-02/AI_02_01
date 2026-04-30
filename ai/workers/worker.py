@@ -11,7 +11,7 @@ import os
 from openai import OpenAI
 
 from ai.workers.predict import predict, recalculate_risk  # noqa: F401
-from ai.workers.prompt import SYSTEM_PROMPT, build_user_prompt
+from ai.workers.prompt import SYSTEM_PROMPT, SYSTEM_PROMPT_RAG, build_user_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -25,25 +25,34 @@ def ml1_predict(user_data: dict) -> dict:
 
 
 # ── ML1 LLM 코멘트 함수
-def ml1_comment(user_info: dict) -> dict:
+def ml1_comment(user_info: dict, retrieved_context: str = "") -> dict:
     """
     위험도 결과 → 건강 코멘트 생성.
     Celery prefork 환경에서 fork-safety 문제 방지를 위해
     OpenAI 클라이언트를 함수 내부에서 생성.
 
+    Args:
+        user_info: ML1 예측 결과 + 사용자 기본 정보
+        retrieved_context: RAG 검색 결과 텍스트 (빈 문자열이면 기본 프롬프트 사용)
+
     Langfuse 로깅:
     - LANGFUSE_PUBLIC_KEY가 설정된 경우에만 활성화
     - 미설정 환경에서는 기본 OpenAI 클라이언트로 폴백
+    - Langfuse name: "ml1-health-comment" (RAG 미적용) / "ml1-health-comment-rag" (RAG 적용)
     """
+    use_rag = bool(retrieved_context)
+    langfuse_name = "ml1-health-comment-rag" if use_rag else "ml1-health-comment"
+
     langfuse_public_key = os.getenv("LANGFUSE_PUBLIC_KEY")
     use_langfuse = False
 
     if langfuse_public_key:
         try:
             from langfuse.openai import openai as langfuse_openai
+
             client = langfuse_openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"), timeout=60)
             use_langfuse = True
-            logger.info("Langfuse 클라이언트 초기화 완료")
+            logger.info("Langfuse 클라이언트 초기화 완료 (name=%s)", langfuse_name)
         except Exception as e:
             logger.warning("Langfuse 초기화 실패, 기본 OpenAI 클라이언트로 폴백 - %s", e)
             client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"), timeout=60)
@@ -51,25 +60,34 @@ def ml1_comment(user_info: dict) -> dict:
         client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"), timeout=60)
         logger.info("Langfuse 미설정, 기본 OpenAI 클라이언트 사용")
 
-    user_prompt = build_user_prompt(user_info)
+    system_prompt = SYSTEM_PROMPT_RAG if use_rag else SYSTEM_PROMPT
+    user_prompt = build_user_prompt(user_info, retrieved_context)
 
-    logger.info("OpenAI API 호출 시작")
+    logger.info("OpenAI API 호출 시작 (name=%s)", langfuse_name)
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ],
         temperature=0,
         timeout=60,
+        name=langfuse_name,
     )
-    logger.info("OpenAI API 호출 완료")
+    logger.info(
+        "OpenAI API 호출 완료 (name=%s) - prompt_tokens=%s, completion_tokens=%s, total_tokens=%s",
+        langfuse_name,
+        response.usage.prompt_tokens if response.usage else "?",
+        response.usage.completion_tokens if response.usage else "?",
+        response.usage.total_tokens if response.usage else "?",
+    )
 
     raw = response.choices[0].message.content
 
     if use_langfuse:
         try:
             from langfuse import Langfuse
+
             Langfuse().flush()
         except Exception:
             pass

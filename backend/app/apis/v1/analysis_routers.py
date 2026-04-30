@@ -1,4 +1,5 @@
 import json
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -16,12 +17,14 @@ from app.dtos.analysis import (
     MigrateGuestAnalysisRequest,
     PredictionResultListResponse,
     PredictionResultResponse,
+    RecalculateRiskRequest,
 )
 from app.models.users import User
 from app.services.analysis import HealthAnalysisService
 from app.utils.pubsub import wait_task_result
 
-# /api/v1/health/analysis 경로의 라우터. AI 건강 분석 API를 담당한다.
+logger = logging.getLogger("api.analysis")
+
 analysis_router = APIRouter(prefix="/health/analysis", tags=["analysis"])
 
 
@@ -37,8 +40,10 @@ async def get_prediction_history(
     session: Annotated[AsyncSession, Depends(get_db_session)],
     redis: Annotated[Redis, Depends(get_redis)],
 ) -> Response:
+    logger.info("[user_id=%d] 예측 이력 조회", user.id)
     service = HealthAnalysisService(session, redis)
     items = await service.get_prediction_history(user.id)
+    logger.info("[user_id=%d] 예측 이력 조회 완료 - %d건", user.id, len(items))
     result = PredictionResultListResponse(
         items=[PredictionResultResponse.model_validate(item) for item in items],
         total=len(items),
@@ -59,8 +64,10 @@ async def get_prediction_results_by_record(
     session: Annotated[AsyncSession, Depends(get_db_session)],
     redis: Annotated[Redis, Depends(get_redis)],
 ) -> Response:
+    logger.info("[user_id=%d] record_id=%d 예측 결과 조회", user.id, record_id)
     service = HealthAnalysisService(session, redis)
     items = await service.get_prediction_result_by_record(record_id, user)
+    logger.info("[user_id=%d] record_id=%d 예측 결과 조회 완료 - %d건", user.id, record_id, len(items))
     result = PredictionResultListResponse(
         items=[PredictionResultResponse.model_validate(item) for item in items],
         total=len(items),
@@ -84,8 +91,13 @@ async def request_guest_analysis(
     session: Annotated[AsyncSession, Depends(get_db_session)],
     redis: Annotated[Redis, Depends(get_redis)],
 ) -> Response:
+    logger.info("[비회원] AI 분석 요청 - age=%s", data.age)
     service = HealthAnalysisService(session, redis)
     result = await service.request_guest_analysis(data)
+    if isinstance(result, AnalysisTaskResponse):
+        logger.info("[비회원] AI 분석 task 제출 - task_id=%s", result.task_id)
+    else:
+        logger.info("[비회원] AI 분석 캐시 히트 - 즉시 반환")
     return Response(result.model_dump(), status_code=status.HTTP_200_OK)
 
 
@@ -111,8 +123,35 @@ async def migrate_guest_analysis(
     session: Annotated[AsyncSession, Depends(get_db_session)],
     redis: Annotated[Redis, Depends(get_redis)],
 ) -> Response:
+    logger.info(
+        "[user_id=%d] 게스트 분석 이전 - guest_task_id=%s, record_id=%d", user.id, data.guest_task_id, data.record_id
+    )
     service = HealthAnalysisService(session, redis)
     result = await service.migrate_guest_analysis(data.guest_task_id, data.record_id, user)
+    logger.info("[user_id=%d] 게스트 분석 이전 완료 - record_id=%d", user.id, data.record_id)
+    return Response(result.model_dump(), status_code=status.HTTP_200_OK)
+
+
+@analysis_router.post(
+    "/recalculate",
+    response_model=AnalysisTaskResponse,
+    status_code=status.HTTP_200_OK,
+    summary="챌린지 달성 후 위험도 재예측",
+    description=(
+        "달성한 챌린지를 기반으로 건강 수치를 보정한 뒤 위험도를 재예측한다. "
+        "completed_challenges에 달성한 챌린지 키를 전달한다. "
+        "(smoke_7days / alco_7days / active_7days / diet_7days) "
+        "결과 조회는 GET /{task_id}/wait 엔드포인트를 사용한다."
+    ),
+)
+async def recalculate_risk_analysis(
+    data: RecalculateRiskRequest,
+    user: Annotated[User, Depends(get_request_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    redis: Annotated[Redis, Depends(get_redis)],
+) -> Response:
+    service = HealthAnalysisService(session, redis)
+    result = await service.request_recalculate_analysis(data.record_id, data.completed_challenges, user)
     return Response(result.model_dump(), status_code=status.HTTP_200_OK)
 
 
@@ -133,8 +172,13 @@ async def request_analysis(
     session: Annotated[AsyncSession, Depends(get_db_session)],
     redis: Annotated[Redis, Depends(get_redis)],
 ) -> Response:
+    logger.info("[user_id=%d] AI 분석 요청 - record_id=%d", user.id, record_id)
     service = HealthAnalysisService(session, redis)
     result = await service.request_analysis(record_id, user)
+    if isinstance(result, AnalysisTaskResponse):
+        logger.info("[user_id=%d] AI 분석 task 제출 - record_id=%d, task_id=%s", user.id, record_id, result.task_id)
+    else:
+        logger.info("[user_id=%d] AI 분석 캐시 히트 - record_id=%d", user.id, record_id)
     return Response(result.model_dump(), status_code=status.HTTP_200_OK)
 
 
@@ -145,7 +189,7 @@ async def request_analysis(
     summary="AI 분석 현재 상태 즉시 확인",
     description=(
         "태스크의 현재 상태를 즉시 반환한다. "
-        "결과가 없으면 pending을 반환하고 연결이 끊긴다. "
+        "결과가 없으면 pending을 반환하고 연결이 끊린다. "
         "실시간 결과 수신이 필요하면 GET /{task_id}/wait을 사용한다."
     ),
 )
@@ -161,12 +205,16 @@ async def get_analysis_result(
             meta = json.loads(raw_meta)
             task_user_id = meta.get("user_id")
             if task_user_id is not None and task_user_id != current_user.id:
+                logger.warning(
+                    "[user_id=%d] 불법 task 조회 시도 - task_id=%s (owner=%s)", current_user.id, task_id, task_user_id
+                )
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="본인의 분석 결과만 조회할 수 있습니다.",
                 )
     service = HealthAnalysisService(session, redis)
     result = await service.get_analysis_result(task_id)
+    logger.info("task 상태 조회 - task_id=%s, status=%s", task_id, result.status)
     return Response(result.model_dump(), status_code=status.HTTP_200_OK)
 
 
@@ -174,16 +222,16 @@ async def get_analysis_result(
     "/{task_id}/wait",
     response_model=AnalysisResultResponse,
     status_code=status.HTTP_200_OK,
-    summary="AI 분석 결과 조회 (롱 폴링)",
+    summary="AI 분석 결과 조회 (롭 폴링)",
     description=(
         "결과가 준비될 때까지 서버에서 최대 30초 대기 후 반환한다.\n\n"
-        "**롱 폴링 방식**\n"
+        "**롭 폴링 방식**\n"
         "- 결과 도착 즉시 응답 → 클라이언트 연결 유지 불필요\n"
         "- 30초 내 완료되면 즉시 반환, 타임아웃 시 `pending` 반환\n"
         "- 타임아웃 수신 시 클라이언트가 즉시 재요청\n\n"
         "**일반 폴링과 차이**\n"
         "- 일반 폴링: 서버가 즉시 pending 반환 → 클라이언트가 N초 후 재요청\n"
-        "- 롱 폴링: 서버가 결과 올 때까지 대기 → 1회 요청으로 결과 수신"
+        "- 롭 폴링: 서버가 결과 올 때까지 대기 → 1회 요청으로 결과 수신"
     ),
 )
 async def wait_analysis_result(
@@ -198,6 +246,9 @@ async def wait_analysis_result(
             meta = json.loads(raw_meta)
             task_user_id = meta.get("user_id")
             if task_user_id is not None and task_user_id != current_user.id:
+                logger.warning(
+                    "[user_id=%d] 불법 task wait 시도 - task_id=%s (owner=%s)", current_user.id, task_id, task_user_id
+                )
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="본인의 분석 결과만 조회할 수 있습니다.",
@@ -205,29 +256,27 @@ async def wait_analysis_result(
 
     service = HealthAnalysisService(session, redis)
 
-    # 1. 이미 완료된 결과가 있으면 즉시 반환 (Pub/Sub 구독 불필요)
     result = await service.get_analysis_result(task_id)
     if result.status != "pending":
+        logger.info("task 이미 완료 - task_id=%s, status=%s", task_id, result.status)
         return Response(result.model_dump(), status_code=status.HTTP_200_OK)
 
-    # 2. 아직 처리 중 → Pub/Sub 채널 구독 후 최대 30초 대기
+    logger.info("task 대기 시작 (Pub/Sub) - task_id=%s", task_id)
     data = await wait_task_result(task_id)
 
     if data is None:
-        # 타임아웃 → 408 반환 (30초 내 AI 분석 미완료)
-        # HTTP 200 + pending 대신 408로 반환해야 클라이언트가 상태 코드 레벨에서 명확히 구분 가능
+        logger.warning("task 롭폴링 타임아웃 - task_id=%s", task_id)
         return Response(
             AnalysisResultResponse(status="pending").model_dump(),
             status_code=status.HTTP_408_REQUEST_TIMEOUT,
         )
 
-    # 3. 결과 도착 → Celery backend에서 재조회하여 DB 저장 후 반환
-    #    (Pub/Sub으로 받은 데이터와 동일하나, _persist_prediction_result 트리거 목적)
     final_result = await service.get_analysis_result(task_id)
     if final_result.status != "pending":
+        logger.info("task 완료 - task_id=%s, status=%s", task_id, final_result.status)
         return Response(final_result.model_dump(), status_code=status.HTTP_200_OK)
 
-    # Celery backend 반영 지연 방어: Pub/Sub 데이터를 직접 반환
+    logger.info("task Pub/Sub 데이터 직접 반환 - task_id=%s", task_id)
     return Response(
         AnalysisResultResponse(
             status=data.get("status", "failed"),

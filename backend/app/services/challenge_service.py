@@ -76,7 +76,8 @@ class ChallengeService:
         if existing:
             logger.warning(
                 "이미 참여 중인 챌린지 - user_id: %d, challenge_id: %d",
-                user_id, challenge_id,
+                user_id,
+                challenge_id,
             )
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -88,18 +89,14 @@ class ChallengeService:
             challenge_id=challenge_id,
             start_date=date.today(),
         )
-        logger.info(
-            "챌린지 참여 완료 - user_challenge_id: %d", user_challenge.id
-        )
+        logger.info("챌린지 참여 완료 - user_challenge_id: %d", user_challenge.id)
         return user_challenge
 
     # ══════════════════════════════════════════
     # 3. 챌린지 포기
     # ══════════════════════════════════════════
 
-    async def abandon_challenge(
-        self, user_challenge_id: int, user_id: int
-    ) -> UserChallenge:
+    async def abandon_challenge(self, user_challenge_id: int, user_id: int) -> UserChallenge:
         """
         챌린지 포기 처리
         검증:
@@ -109,16 +106,13 @@ class ChallengeService:
         """
         logger.info(
             "챌린지 포기 요청 - user_challenge_id: %d, user_id: %d",
-            user_challenge_id, user_id,
+            user_challenge_id,
+            user_id,
         )
 
-        user_challenge = await self._get_active_user_challenge(
-            user_challenge_id, user_id
-        )
+        user_challenge = await self._get_active_user_challenge(user_challenge_id, user_id)
 
-        updated = await self.repo.update_status(
-            user_challenge, UserChallengeStatusEnum.ABANDONED
-        )
+        updated = await self.repo.update_status(user_challenge, UserChallengeStatusEnum.ABANDONED)
         logger.info("챌린지 포기 완료 - user_challenge_id: %d", user_challenge_id)
         return updated
 
@@ -148,20 +142,17 @@ class ChallengeService:
         """
         logger.info(
             "챌린지 인증 요청 - user_challenge_id: %d, user_id: %d",
-            user_challenge_id, user_id,
+            user_challenge_id,
+            user_id,
         )
 
-        user_challenge = await self._get_active_user_challenge(
-            user_challenge_id, user_id
-        )
+        user_challenge = await self._get_active_user_challenge(user_challenge_id, user_id)
 
         # 하루 1회 인증 제한
         today = date.today()
         existing_log = await self.repo.get_log_by_date(user_challenge_id, today)
         if existing_log:
-            logger.warning(
-                "오늘 이미 인증 완료 - user_challenge_id: %d", user_challenge_id
-            )
+            logger.warning("오늘 이미 인증 완료 - user_challenge_id: %d", user_challenge_id)
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="오늘은 이미 인증을 완료했습니다.",
@@ -191,35 +182,37 @@ class ChallengeService:
 
                 if total_logs >= challenge.required_success_days:
                     user_challenge.completed_at = datetime.now()
-                    await self.repo.update_status(
-                        user_challenge, UserChallengeStatusEnum.COMPLETED
-                    )
+                    await self.repo.update_status(user_challenge, UserChallengeStatusEnum.COMPLETED)
                     logger.info(
                         "챌린지 성공! - user_challenge_id: %d, total_logs: %d/%d",
-                        user_challenge_id, total_logs, challenge.required_success_days,
+                        user_challenge_id,
+                        total_logs,
+                        challenge.required_success_days,
                     )
                 else:
-                    await self.repo.update_status(
-                        user_challenge, UserChallengeStatusEnum.FAILED
-                    )
+                    await self.repo.update_status(user_challenge, UserChallengeStatusEnum.FAILED)
                     logger.info(
                         "챌린지 실패 - user_challenge_id: %d, total_logs: %d/%d",
-                        user_challenge_id, total_logs, challenge.required_success_days,
+                        user_challenge_id,
+                        total_logs,
+                        challenge.required_success_days,
                     )
 
+        is_completed = user_challenge.status == UserChallengeStatusEnum.COMPLETED
+
         logger.info(
-            "인증 완료 - user_challenge_id: %d, streak: %d",
-            user_challenge_id, new_streak,
+            "인증 완료 - user_challenge_id: %d, streak: %d, is_completed: %s",
+            user_challenge_id,
+            new_streak,
+            is_completed,
         )
-        return log
+        return log, new_streak, is_completed
 
     # ══════════════════════════════════════════
     # 공통 헬퍼
     # ══════════════════════════════════════════
 
-    async def _get_active_user_challenge(
-        self, user_challenge_id: int, user_id: int
-    ) -> UserChallenge:
+    async def _get_active_user_challenge(self, user_challenge_id: int, user_id: int) -> UserChallenge:
         """
         user_challenge 조회 + 소유권 검증 + active 상태 검증
         포기, 챌린지 인증에서 공통으로 사용
@@ -241,7 +234,9 @@ class ChallengeService:
         if user_challenge.user_id != user_id:
             logger.warning(
                 "소유권 검증 실패 - user_challenge_id: %d, owner_id: %d, requester_id: %d",
-                user_challenge_id, user_challenge.user_id, user_id,
+                user_challenge_id,
+                user_challenge.user_id,
+                user_id,
             )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -317,10 +312,7 @@ class ChallengeService:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="AI 추천 서비스가 응답하지 않습니다. 잠시 후 다시 시도해주세요.",
-            )
+            ) from exc
 
-        recommendations = [
-            ChallengeRecommendItem(**item)
-            for item in (payload.get("data") or [])
-        ]
+        recommendations = [ChallengeRecommendItem(**item) for item in (payload.get("data") or [])]
         return ChallengeRecommendResponse(recommendations=recommendations)

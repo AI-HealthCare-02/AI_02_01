@@ -68,9 +68,7 @@ class SocialRepository:
         친구 요청 ID(PK)로 단건 조회.
         없으면 None 반환.
         """
-        result = await self._session.execute(
-            select(Friendship).where(Friendship.id == request_id)
-        )
+        result = await self._session.execute(select(Friendship).where(Friendship.id == request_id))
         return result.scalar_one_or_none()
 
     async def update_friendship_status(self, friendship: Friendship, new_status: FriendshipStatusEnum) -> None:
@@ -94,6 +92,17 @@ class SocialRepository:
             .order_by(Friendship.created_at.desc())
         )
         return list(result.all())
+
+    async def has_pending_request(self, requester_id: int, receiver_id: int) -> bool:
+        """내가 상대방에게 보낸 PENDING 상태 친구 요청 존재 여부 확인"""
+        result = await self._session.execute(
+            select(Friendship).where(
+                Friendship.requester_id == requester_id,
+                Friendship.receiver_id == receiver_id,
+                Friendship.status == FriendshipStatusEnum.PENDING,
+            )
+        )
+        return result.scalar_one_or_none() is not None
 
     async def is_friend(self, user_id: int, friend_id: int) -> bool:
         """friend_list에서 친구 여부 확인"""

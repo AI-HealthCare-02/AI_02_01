@@ -79,6 +79,7 @@ class User(Base):
         comment="계정 생성 시각",
     )
 
+
 # 친구 요청 테이블.
 class Friendship(Base):
     __tablename__ = "friendships"
@@ -113,9 +114,9 @@ class Friendship(Base):
         comment="요청 시각",
     )
 
+
 # 친구 목록 테이블
 class FriendList(Base):
-
     __tablename__ = "friend_list"
 
     id = Column(

@@ -111,7 +111,9 @@ class HealthAnalysisService:
         logger.info("ML1 분석 task 제출 - user_id: %d, task_id: %s", user.id, task.id)
 
         # 5. task_id → record_id 매핑을 Redis에 저장 (결과 수신 시 DB 저장에 사용)
-        task_meta = json.dumps({"record_id": record_id, "trigger_type": TriggerTypeEnum.NEW_RECORD.value, "user_id": user.id})
+        task_meta = json.dumps(
+            {"record_id": record_id, "trigger_type": TriggerTypeEnum.NEW_RECORD.value, "user_id": user.id}
+        )
         await self.redis.set(f"ml1:task_meta:{task.id}", task_meta, ex=TASK_META_TTL)
 
         return AnalysisTaskResponse(task_id=task.id, status="pending")
@@ -157,6 +159,38 @@ class HealthAnalysisService:
 
         return AnalysisTaskResponse(task_id=task.id, status="pending")
 
+    async def request_recalculate_analysis(
+        self, record_id: int, completed_challenges: list[str], user: User
+    ) -> AnalysisTaskResponse:
+        """
+        챌린지 달성 후 위험도 재예측 요청.
+        1. record_id로 건강검진 기록 조회 + 소유권 검증
+        2. 건강 수치를 ml1 입력 형식으로 변환
+        3. Celery task 제출 → task_id 반환
+        결과 조회는 기존 GET /{task_id}/wait 엔드포인트를 사용한다.
+        """
+        record = await self.health_repo.get_record(record_id)
+        if not record:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="해당 건강검진 기록을 찾을 수 없습니다.",
+            )
+        if record.user_id != user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="본인의 건강검진 기록만 분석할 수 있습니다.",
+            )
+
+        user_data = self._convert_record_to_ml1_input(record, user)
+
+        task = _celery_sender.send_task(
+            "ml1.recalculate_risk",
+            args=[user_data, completed_challenges, user.nickname or "사용자"],
+        )
+        logger.info("ML1 재계산 task 제출 - user_id: %d, task_id: %s", user.id, task.id)
+
+        return AnalysisTaskResponse(task_id=task.id, status="pending")
+
     async def migrate_guest_analysis(self, guest_task_id: str, record_id: int, user: User) -> AnalysisResultResponse:
         """
         게스트 분석 결과를 회원 계정으로 이전.
@@ -167,18 +201,22 @@ class HealthAnalysisService:
 
         result = AsyncResult(id=guest_task_id, app=_celery_result)
         if result.state != "SUCCESS":
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="게스트 분석 결과를 찾을 수 없습니다. 다시 분석해주세요.")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="게스트 분석 결과를 찾을 수 없습니다. 다시 분석해주세요."
+            )
 
         task_result = result.result
         data = task_result.get("data") if isinstance(task_result, dict) else None
         if not data:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="게스트 분석 결과 데이터가 없습니다.")
 
-        task_meta = json.dumps({
-            "record_id": record_id,
-            "trigger_type": TriggerTypeEnum.NEW_RECORD.value,
-            "user_id": user.id,
-        })
+        task_meta = json.dumps(
+            {
+                "record_id": record_id,
+                "trigger_type": TriggerTypeEnum.NEW_RECORD.value,
+                "user_id": user.id,
+            }
+        )
         await self.redis.set(f"ml1:task_meta:{guest_task_id}", task_meta, ex=TASK_META_TTL)
         await self._persist_prediction_result(guest_task_id, data)
         logger.info("게스트 분석 결과 회원 이전 완료 - user_id: %d, record_id: %d", user.id, record_id)

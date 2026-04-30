@@ -56,27 +56,45 @@ class AIVisionService:
 
     # ── 식단 무료 분석 (+100pt) ──
 
-    async def enqueue_meal_free(self, image_base64: str, media_type: str, user_id: int, image_url: str | None = None, risk_factors: str = "") -> str:
+    async def enqueue_meal_free(
+        self,
+        image_base64: str,
+        media_type: str,
+        user_id: int,
+        image_url: str | None = None,
+        risk_factors: str = "",
+        risk_grade: str = "",
+    ) -> str:
         task = _celery_sender.send_task(
             "vision.analyze_meal_free",
-            args=[image_base64, media_type, risk_factors],
+            args=[image_base64, media_type, risk_factors, risk_grade],
         )
         await self._save_task_meta(task.id, user_id, AnalysisTypeEnum.DIET, image_url)
         return task.id
 
     # ── 식단 유료 리포트 (-300pt) ──
 
-    async def enqueue_meal_paid(self, image_base64: str, media_type: str, user_id: int, image_url: str | None = None, risk_factors: str = "") -> str:
+    async def enqueue_meal_paid(
+        self,
+        image_base64: str,
+        media_type: str,
+        user_id: int,
+        image_url: str | None = None,
+        risk_factors: str = "",
+        risk_grade: str = "",
+    ) -> str:
         task = _celery_sender.send_task(
             "vision.analyze_meal_paid",
-            args=[image_base64, media_type, risk_factors],
+            args=[image_base64, media_type, risk_factors, risk_grade],
         )
         await self._save_task_meta(task.id, user_id, AnalysisTypeEnum.DIET, image_url)
         return task.id
 
     # ── 운동 캡처 인증 (+100pt) ──
 
-    async def enqueue_exercise(self, image_base64: str, media_type: str, user_id: int, image_url: str | None = None) -> str:
+    async def enqueue_exercise(
+        self, image_base64: str, media_type: str, user_id: int, image_url: str | None = None
+    ) -> str:
         task = _celery_sender.send_task(
             "vision.analyze_exercise",
             args=[image_base64, media_type],
@@ -113,7 +131,9 @@ class AIVisionService:
     # private
     # ──────────────────────────────────────────────
 
-    async def _save_task_meta(self, task_id: str, user_id: int, analysis_type: AnalysisTypeEnum, image_url: str | None = None) -> None:
+    async def _save_task_meta(
+        self, task_id: str, user_id: int, analysis_type: AnalysisTypeEnum, image_url: str | None = None
+    ) -> None:
         """enqueue 시 Redis에 task_meta 저장 (결과 조회 시 DB 저장에 사용)"""
         meta = json.dumps({"user_id": user_id, "analysis_type": analysis_type.value, "image_url": image_url})
         await self._redis.set(f"vision:task_meta:{task_id}", meta, ex=_TASK_META_TTL)
@@ -149,12 +169,14 @@ class AIVisionService:
 
         try:
             analysis_type_enum = AnalysisTypeEnum(analysis_type)
-            await self._cv_log_repo.create({
-                "user_id": user_id,
-                "analysis_type": analysis_type_enum,
-                "image_url": meta.get("image_url"),
-                "result_json": result_data,
-            })
+            await self._cv_log_repo.create(
+                {
+                    "user_id": user_id,
+                    "analysis_type": analysis_type_enum,
+                    "image_url": meta.get("image_url"),
+                    "result_json": result_data,
+                }
+            )
             await self._redis.set(f"vision:result_saved:{task_id}", "1", ex=_TASK_META_TTL)
             logger.info("cv_analysis_log DB 저장 완료 - task_id: %s, user_id: %d", task_id, user_id)
         except Exception as e:

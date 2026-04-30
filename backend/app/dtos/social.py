@@ -15,6 +15,7 @@ class UserSearchResponse(BaseModel):
     profile_image: str | None
     character_stage: int
     is_friend: bool
+    is_requested: bool
 
 
 class UserSearchListResponse(BaseModel):

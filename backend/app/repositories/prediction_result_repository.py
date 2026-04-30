@@ -45,9 +45,7 @@ class PredictionResultRepository:
     async def get_list_by_record_id(self, record_id: int) -> list[PredictionResult]:
         """특정 건강검진 기록의 전체 예측 결과 목록 조회 (최신순)."""
         rows = await self._session.execute(
-            select(self._model)
-            .where(self._model.record_id == record_id)
-            .order_by(self._model.created_at.desc())
+            select(self._model).where(self._model.record_id == record_id).order_by(self._model.created_at.desc())
         )
         return list(rows.scalars().all())
 
