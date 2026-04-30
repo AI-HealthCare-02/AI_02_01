@@ -37,7 +37,7 @@ FACTOR_MAP = {
     'hypertension': '고혈압',        
     'high_cholesterol': '고콜레스테롤', 
     'obesity': '비만',              
-    'age_bmi': '나이·체중 관리 필요',
+    'age_bmi': '체중 관리 필요',
     'cholesterol': '고콜레스테롤',
     'gluc': '고혈당',
     'bmi': '과체중',
@@ -48,9 +48,9 @@ FACTOR_MAP = {
     'gender': '성별',
     'pulse_pressure': '고혈압',
     'risk_class': '복합위험군',
-    'bp_ratio': '고혈압',           # 추가
-    'age_hypertension': '나이·혈압 관리 필요',  # 추가
-    'age_cholesterol': '나이·콜레스테롤 관리 필요',  # 추가
+    'bp_ratio': '고혈압',
+    'age_hypertension': '혈압 관리 필요',
+    'age_cholesterol': '콜레스테롤 관리 필요',
     'age_ap_hi': '고혈압',          # 추가
     'smoke_alco': '흡연+음주',      # 추가
     'age_active': '운동부족',       # 추가
