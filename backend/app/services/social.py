@@ -5,6 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
 from app.dtos.social import (
+    FeedItemResponse,
+    FeedResponse,
     FriendActionResponse,
     FriendListResponse,
     FriendRequestListResponse,
@@ -160,6 +162,25 @@ class SocialService:
             for entry, friend in rows
         ]
         return FriendListResponse(friends=friends)
+
+    async def get_feed(self, current_user: User) -> FeedResponse:
+        """친구들의 active 챌린지 최근 인증 피드 조회"""
+        rows = await self.repo.get_friend_feed(current_user.id)
+        logger.info("친구 챌린지 피드 조회 - user_id: %d, count: %d", current_user.id, len(rows))
+
+        items = [
+            FeedItemResponse(
+                user_id=user.id,
+                nickname=user.nickname,
+                profile_image=user.profile_image,
+                challenge_title=challenge.title,
+                log_date=log.log_date,
+                current_streak=uc.current_streak,
+                created_at=log.created_at,
+            )
+            for user, challenge, log, uc in rows
+        ]
+        return FeedResponse(items=items)
 
     async def delete_friend(self, friend_id: int, current_user: User) -> FriendActionResponse:
         """친구 삭제 (양방향 FriendList 삭제 + Friendship 레코드 삭제로 재요청 허용)"""
