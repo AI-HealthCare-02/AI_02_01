@@ -17,6 +17,7 @@ from fastapi.responses import JSONResponse as Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.databases import get_db_session
+from app.dependencies.security import get_request_user
 from app.dtos.challenge import (
     ChallengeListResponse,
     ChallengeLogRequest,
@@ -27,9 +28,8 @@ from app.dtos.challenge import (
     MessageResponse,
     UserChallengeResponse,
 )
-from app.services.challenge_service import ChallengeService
-from app.dependencies.security import get_request_user
 from app.models.users import User
+from app.services.challenge_service import ChallengeService
 
 # /api/v1/challenges 경로의 라우터
 challenge_router = APIRouter(prefix="/challenges", tags=["challenges"])

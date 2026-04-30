@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
 from app.core.config import Config
+from app.dtos.challenge import ChallengeRecommendItem, ChallengeRecommendResponse
 from app.models.challenges import (
     UserChallenge,
     UserChallengeStatusEnum,
@@ -27,7 +28,6 @@ from app.models.challenges import (
 from app.models.users import User
 from app.repositories.challenge_repository import ChallengeRepository
 from app.repositories.prediction_result_repository import PredictionResultRepository
-from app.dtos.challenge import ChallengeRecommendItem, ChallengeRecommendResponse
 
 _config = Config()
 _celery = Celery(broker=_config.CELERY_BROKER_URL, backend=_config.CELERY_BACKEND_URL)

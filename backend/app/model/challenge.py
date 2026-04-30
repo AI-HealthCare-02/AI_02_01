@@ -1,10 +1,11 @@
-from sqlalchemy import Column, Date, DateTime, ForeignKey, Integer, String, Text
 from app.database import Base
+from sqlalchemy import Column, Date, DateTime, ForeignKey, Integer, String, Text
+
 
 # 챌린지 마스터 테이블
 class Challenge(Base):
     __tablename__ = "challenges"
- 
+
     id = Column(
         Integer,
         primary_key=True,
@@ -35,7 +36,7 @@ class Challenge(Base):
 # 사용자 챌린지 참여 테이블
 class UserChallenge(Base):
     __tablename__ = "user_challenges"
- 
+
     id = Column(
         Integer,
         primary_key=True,
@@ -76,11 +77,11 @@ class UserChallenge(Base):
         nullable=True,                  # 완료 전까지는 null
         comment="완료 시각",
     )
- 
+
 # 챌린지 일별 인증 기록 테이블
 class ChallengeLog(Base):
     __tablename__ = "challenge_logs"
- 
+
     id = Column(
         Integer,
         primary_key=True,
@@ -119,11 +120,11 @@ class ChallengeLog(Base):
         nullable=False,
         comment="기록 생성 시각",
     )
- 
+
 # 뱃지 마스터 테이블
 class Badge(Base):
     __tablename__ = "badges"
- 
+
     id = Column(
         Integer,
         primary_key=True,
@@ -156,12 +157,12 @@ class Badge(Base):
         # - 전설 뱃지  : +300pt
         # - 건강 개선   : +500pt (심혈관 나이 -5세)
     )
- 
+
 # 사용자 뱃지 획득 기록 테이블
 class UserBadge(Base):
- 
+
     __tablename__ = "user_badges"
- 
+
     id = Column(
         Integer,
         primary_key=True,
@@ -185,11 +186,11 @@ class UserBadge(Base):
         nullable=False,
         comment="획득 시각",
     )
- 
+
 # 포인트 변동 이력 테이블
-class PointLog(Base): 
+class PointLog(Base):
     __tablename__ = "point_logs"
- 
+
     id = Column(
         Integer,
         primary_key=True,
@@ -217,4 +218,3 @@ class PointLog(Base):
         nullable=False,
         comment="변동 시각",
     )
- 

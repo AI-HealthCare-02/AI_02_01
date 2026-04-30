@@ -4,7 +4,6 @@ from pydantic import BaseModel, Field, model_validator
 
 from app.models.challenges import VerificationMethodEnum
 
-
 # ──────────────────────────────────────────────
 # Request DTOs
 # ──────────────────────────────────────────────

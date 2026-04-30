@@ -1,10 +1,11 @@
-from sqlalchemy import Column, Boolean, String, DateTime, ForeignKey, Integer, Numeric, JSON, Text
 from app.database import Base
+from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Integer, Numeric, String, Text
+
 
 # 건강검진 수치 입력 테이블
 class HealthRecord(Base):
     __tablename__ = "health_records"
- 
+
     id = Column(
         Integer,
         primary_key=True,
@@ -72,11 +73,11 @@ class HealthRecord(Base):
         nullable=False,
         comment="입력 시각",
     )
- 
+
 # 심혈관 위험도 예측 결과 테이블
 class PredictionResult(Base):
     __tablename__ = "prediction_results"
- 
+
     id = Column(
         Integer,
         primary_key=True,
@@ -152,7 +153,7 @@ class PredictionResult(Base):
 # CV(Computer Vision) 분석 결과 테이블.
 class CvAnalysisLog(Base):
     __tablename__ = "cv_analysis_logs"
- 
+
     id = Column(
         Integer,
         primary_key=True,

@@ -2,7 +2,6 @@ from pydantic import BaseModel
 
 from app.dtos.base import BaseSerializerModel
 
-
 # ──────────────────────────────────────────────
 # Request DTOs
 # ──────────────────────────────────────────────

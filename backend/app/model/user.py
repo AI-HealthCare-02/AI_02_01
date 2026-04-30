@@ -1,5 +1,6 @@
-from sqlalchemy import Column, Boolean, Integer, String, DateTime, ForeignKey
 from app.database import Base
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String
+
 
 # 사용자 테이블
 class User(Base):
@@ -81,7 +82,7 @@ class User(Base):
 # 친구 요청 테이블.
 class Friendship(Base):
     __tablename__ = "friendships"
- 
+
     id = Column(
         Integer,
         primary_key=True,
@@ -111,12 +112,12 @@ class Friendship(Base):
         nullable=False,
         comment="요청 시각",
     )
- 
+
 # 친구 목록 테이블
 class FriendList(Base):
 
     __tablename__ = "friend_list"
- 
+
     id = Column(
         Integer,
         primary_key=True,
@@ -140,4 +141,3 @@ class FriendList(Base):
         nullable=False,
         comment="친구 확정 시각",
     )
- 
