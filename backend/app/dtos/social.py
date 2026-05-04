@@ -82,3 +82,32 @@ class FriendActionResponse(BaseModel):
     """친구 요청 수락/거절/삭제 결과"""
 
     message: str
+
+
+# ──────────────────────────────────────────────
+# 소셜 피드
+# ──────────────────────────────────────────────
+
+
+class FeedItemResponse(BaseModel):
+    """친구 챌린지 인증 피드 단건"""
+
+    user_id: int
+    nickname: str
+    profile_image: str | None
+    challenge_title: str
+    log_date: str
+    current_streak: int
+    created_at: str
+
+
+class FeedListResponse(BaseModel):
+    """소셜 피드 목록"""
+
+    items: list[FeedItemResponse]
+
+
+class CheerResponse(BaseModel):
+    """응원하기 결과"""
+
+    message: str

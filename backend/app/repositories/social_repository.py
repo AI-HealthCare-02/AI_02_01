@@ -1,6 +1,7 @@
 from sqlalchemy import and_, delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.challenges import Challenge, ChallengeLog, UserChallenge
 from app.models.friend_list import FriendList
 from app.models.friendships import Friendship, FriendshipStatusEnum
 from app.models.users import User
@@ -151,6 +152,22 @@ class SocialRepository:
             )
         )
         await self._session.commit()
+
+    async def get_friends_feed(self, user_id: int, limit: int = 20) -> list:
+        """친구들의 최근 챌린지 인증 피드 조회 (최신순)"""
+        result = await self._session.execute(
+            select(ChallengeLog, UserChallenge, Challenge, User)
+            .join(UserChallenge, ChallengeLog.user_challenge_id == UserChallenge.id)
+            .join(Challenge, UserChallenge.challenge_id == Challenge.id)
+            .join(User, UserChallenge.user_id == User.id)
+            .join(FriendList, and_(
+                FriendList.user_id == user_id,
+                FriendList.friend_id == UserChallenge.user_id,
+            ))
+            .order_by(ChallengeLog.created_at.desc())
+            .limit(limit)
+        )
+        return list(result.all())
 
     async def delete_friendship_by_users(self, user_a: int, user_b: int) -> None:
         """

@@ -5,6 +5,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
 from app.dtos.social import (
+    CheerResponse,
+    FeedItemResponse,
+    FeedListResponse,
     FriendActionResponse,
     FriendListResponse,
     FriendRequestListResponse,
@@ -174,3 +177,26 @@ class SocialService:
 
         logger.info("친구 삭제 - user_id: %d, friend_id: %d", current_user.id, friend_id)
         return FriendActionResponse(message="친구를 삭제했습니다.")
+
+    async def get_feed(self, current_user: User) -> FeedListResponse:
+        """친구들의 최근 챌린지 인증 피드 조회"""
+        rows = await self.repo.get_friends_feed(current_user.id)
+        items = [
+            FeedItemResponse(
+                user_id=user.id,
+                nickname=user.nickname or "사용자",
+                profile_image=user.profile_image,
+                challenge_title=challenge.title,
+                log_date=str(log.log_date),
+                current_streak=user_challenge.current_streak,
+                created_at=str(log.created_at),
+            )
+            for log, user_challenge, challenge, user in rows
+        ]
+        logger.info("피드 조회 - user_id: %d, count: %d", current_user.id, len(items))
+        return FeedListResponse(items=items)
+
+    async def cheer(self, current_user: User) -> CheerResponse:
+        """응원하기 — 응원 행위를 기록하고 성공 응답 반환"""
+        logger.info("응원하기 - user_id: %d", current_user.id)
+        return CheerResponse(message="응원을 보냈습니다! 💚")
