@@ -26,6 +26,7 @@ from app.dtos.challenge import (
     ChallengeResponse,
     ErrorResponse,
     MessageResponse,
+    MyActiveChallengeListResponse,
     UserChallengeResponse,
 )
 from app.models.users import User
@@ -236,6 +237,25 @@ async def recommend_challenges(
 ) -> Response:
     service = ChallengeService(session)
     result = await service.recommend_challenges(current_user)
+    return Response(
+        content=result.model_dump(),
+        status_code=status.HTTP_200_OK,
+    )
+
+
+@user_challenge_router.get(
+    "/my",
+    response_model=MyActiveChallengeListResponse,
+    status_code=status.HTTP_200_OK,
+    summary="내 진행 중인 챌린지 목록",
+    description="현재 로그인 사용자의 ACTIVE 상태 챌린지 목록을 반환합니다.",
+)
+async def get_my_active_challenges(
+    current_user: Annotated[User, Depends(get_request_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> Response:
+    service = ChallengeService(session)
+    result = await service.get_my_active_challenges(current_user.id)
     return Response(
         content=result.model_dump(),
         status_code=status.HTTP_200_OK,

@@ -107,6 +107,26 @@ class ErrorResponse(BaseModel):
     detail: str
 
 
+class MyActiveChallengeResponse(BaseModel):
+    """내 진행 중인 챌린지 단건"""
+
+    user_challenge_id: int
+    challenge_id: int
+    title: str
+    category: str
+    current_streak: int
+    start_date: date
+    duration_days: int
+    required_success_days: int
+    verification_method: str
+
+
+class MyActiveChallengeListResponse(BaseModel):
+    """내 진행 중인 챌린지 목록"""
+
+    challenges: list[MyActiveChallengeResponse]
+
+
 class ChallengeRecommendItem(BaseModel):
     """AI 추천 챌린지 단건"""
 
