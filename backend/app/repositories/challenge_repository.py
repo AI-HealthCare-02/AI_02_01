@@ -144,3 +144,16 @@ class ChallengeRepository:
             )
         )
         return list(result.scalars().all())
+
+    async def get_my_active_challenges(self, user_id: int) -> list[tuple[UserChallenge, Challenge]]:
+        """유저의 진행 중인 챌린지 목록 (UserChallenge + Challenge 조인)"""
+        result = await self.session.execute(
+            select(UserChallenge, Challenge)
+            .join(Challenge, UserChallenge.challenge_id == Challenge.id)
+            .where(
+                UserChallenge.user_id == user_id,
+                UserChallenge.status == UserChallengeStatusEnum.ACTIVE,
+            )
+            .order_by(UserChallenge.id.desc())
+        )
+        return list(result.all())

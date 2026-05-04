@@ -7,7 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.databases import get_db_session
 from app.dependencies.security import get_request_user
 from app.dtos.social import (
-    FeedResponse,
+    CheerResponse,
+    FeedListResponse,
     FriendActionResponse,
     FriendListResponse,
     FriendRequestListResponse,
@@ -123,17 +124,33 @@ async def get_friend_list(
 
 @social_router.get(
     "/feed",
-    response_model=FeedResponse,
+    response_model=FeedListResponse,
     status_code=status.HTTP_200_OK,
-    summary="친구 챌린지 피드 조회",
-    description="내 친구들이 진행 중인 챌린지의 가장 최근 인증 기록을 최신순으로 조회한다. 인증 기록이 없는 챌린지는 제외된다.",
+    summary="소셜 피드 조회",
+    description="친구들의 최근 챌린지 인증 피드를 최신순으로 조회한다.",
 )
-async def get_social_feed(
+async def get_feed(
     user: Annotated[User, Depends(get_request_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> Response:
     service = SocialService(session)
     result = await service.get_feed(user)
+    return Response(result.model_dump(), status_code=status.HTTP_200_OK)
+
+
+@social_router.post(
+    "/feed/cheer",
+    response_model=CheerResponse,
+    status_code=status.HTTP_200_OK,
+    summary="응원하기",
+    description="친구의 챌린지 인증에 응원을 보낸다.",
+)
+async def cheer(
+    user: Annotated[User, Depends(get_request_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> Response:
+    service = SocialService(session)
+    result = await service.cheer(user)
     return Response(result.model_dump(), status_code=status.HTTP_200_OK)
 
 

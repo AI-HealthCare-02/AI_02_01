@@ -1,7 +1,7 @@
-from sqlalchemy import and_, delete, func, or_, select
+from sqlalchemy import and_, delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.challenges import Challenge, ChallengeLog, UserChallenge, UserChallengeStatusEnum
+from app.models.challenges import Challenge, ChallengeLog, UserChallenge
 from app.models.friend_list import FriendList
 from app.models.friendships import Friendship, FriendshipStatusEnum
 from app.models.users import User
@@ -153,41 +153,22 @@ class SocialRepository:
         )
         await self._session.commit()
 
-    async def get_friend_feed(self, user_id: int) -> list[tuple]:
-        """
-        내 친구들의 active 챌린지 중 가장 최근 인증 로그를 조회.
-        인증 기록이 없는 챌린지는 제외된다 (피드 = 활동 기록).
-        """
-        latest_log_subq = (
-            select(
-                ChallengeLog.user_challenge_id,
-                func.max(ChallengeLog.created_at).label("max_created_at"),
-            )
-            .group_by(ChallengeLog.user_challenge_id)
-            .subquery()
-        )
-
+    async def get_friends_feed(self, user_id: int, limit: int = 20) -> list:
+        """친구들의 최근 챌린지 인증 피드 조회 (최신순)"""
         result = await self._session.execute(
-            select(User, Challenge, ChallengeLog, UserChallenge)
-            .join(FriendList, FriendList.friend_id == User.id)
+            select(ChallengeLog, UserChallenge, Challenge, User)
+            .join(UserChallenge, ChallengeLog.user_challenge_id == UserChallenge.id)
+            .join(Challenge, UserChallenge.challenge_id == Challenge.id)
+            .join(User, UserChallenge.user_id == User.id)
             .join(
-                UserChallenge,
+                FriendList,
                 and_(
-                    UserChallenge.user_id == User.id,
-                    UserChallenge.status == UserChallengeStatusEnum.ACTIVE,
+                    FriendList.user_id == user_id,
+                    FriendList.friend_id == UserChallenge.user_id,
                 ),
             )
-            .join(Challenge, Challenge.id == UserChallenge.challenge_id)
-            .join(latest_log_subq, latest_log_subq.c.user_challenge_id == UserChallenge.id)
-            .join(
-                ChallengeLog,
-                and_(
-                    ChallengeLog.user_challenge_id == latest_log_subq.c.user_challenge_id,
-                    ChallengeLog.created_at == latest_log_subq.c.max_created_at,
-                ),
-            )
-            .where(FriendList.user_id == user_id)
             .order_by(ChallengeLog.created_at.desc())
+            .limit(limit)
         )
         return list(result.all())
 

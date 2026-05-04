@@ -19,7 +19,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
 from app.core.config import Config
-from app.dtos.challenge import ChallengeRecommendItem, ChallengeRecommendResponse
+from app.dtos.challenge import (
+    ChallengeRecommendItem,
+    ChallengeRecommendResponse,
+    MyActiveChallengeListResponse,
+    MyActiveChallengeResponse,
+)
 from app.models.challenges import (
     UserChallenge,
     UserChallengeStatusEnum,
@@ -250,6 +255,29 @@ class ChallengeService:
             )
 
         return user_challenge
+
+    # ══════════════════════════════════════════
+    # 5. 내 진행 중인 챌린지 목록
+    # ══════════════════════════════════════════
+
+    async def get_my_active_challenges(self, user_id: int) -> MyActiveChallengeListResponse:
+        """유저의 진행 중인 챌린지 목록 조회"""
+        rows = await self.repo.get_my_active_challenges(user_id)
+        challenges = [
+            MyActiveChallengeResponse(
+                user_challenge_id=uc.id,
+                challenge_id=c.id,
+                title=c.title,
+                category=c.category.value,
+                current_streak=uc.current_streak,
+                start_date=uc.start_date,
+                duration_days=c.duration_days,
+                required_success_days=c.required_success_days,
+                verification_method=c.verification_method.value,
+            )
+            for uc, c in rows
+        ]
+        return MyActiveChallengeListResponse(challenges=challenges)
 
     # ══════════════════════════════════════════
     # RAG 챌린지 추천
