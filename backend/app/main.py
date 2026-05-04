@@ -109,4 +109,8 @@ app.include_router(v1_routers)
 
 @app.get("/health", tags=["system"], summary="서버 상태 확인")
 async def health_check():
-    return {"status": "ok"}
+    # 상태: true, 메시지: 정상 동작 안내
+    return {
+        "status": True,
+        "message": "마이헬스버디 서버 정상 동작 합니다!",
+    }
