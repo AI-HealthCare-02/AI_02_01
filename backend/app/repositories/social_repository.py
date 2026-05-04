@@ -1,4 +1,4 @@
-from sqlalchemy import and_, delete, or_, select
+from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.challenges import Challenge, ChallengeLog, UserChallenge
