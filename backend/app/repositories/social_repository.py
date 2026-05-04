@@ -160,10 +160,13 @@ class SocialRepository:
             .join(UserChallenge, ChallengeLog.user_challenge_id == UserChallenge.id)
             .join(Challenge, UserChallenge.challenge_id == Challenge.id)
             .join(User, UserChallenge.user_id == User.id)
-            .join(FriendList, and_(
-                FriendList.user_id == user_id,
-                FriendList.friend_id == UserChallenge.user_id,
-            ))
+            .join(
+                FriendList,
+                and_(
+                    FriendList.user_id == user_id,
+                    FriendList.friend_id == UserChallenge.user_id,
+                ),
+            )
             .order_by(ChallengeLog.created_at.desc())
             .limit(limit)
         )
