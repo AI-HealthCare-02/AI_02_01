@@ -1,13 +1,18 @@
 import logging
+from datetime import datetime
 
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
+from app.core import config
 from app.dtos.social import (
+    CheerRequest,
     CheerResponse,
     FeedItemResponse,
     FeedListResponse,
+    FeedNotificationListResponse,
+    FeedNotificationResponse,
     FriendActionResponse,
     FriendListResponse,
     FriendRequestListResponse,
@@ -179,24 +184,110 @@ class SocialService:
         return FriendActionResponse(message="친구를 삭제했습니다.")
 
     async def get_feed(self, current_user: User) -> FeedListResponse:
-        """친구들의 최근 챌린지 인증 피드 조회"""
-        rows = await self.repo.get_friends_feed(current_user.id)
+        """친구들의 진행 중 챌린지와 오늘 인증 여부 조회"""
+        today = datetime.now(config.TIMEZONE).date()
+        rows = await self.repo.get_friends_feed(current_user.id, today)
         items = [
             FeedItemResponse(
+                challenge_id=challenge.id,
+                user_challenge_id=user_challenge.id,
+                challenge_log_id=log.id if log else None,
                 user_id=user.id,
                 nickname=user.nickname or "사용자",
                 profile_image=user.profile_image,
                 challenge_title=challenge.title,
-                log_date=str(log.log_date),
+                log_date=str(log.log_date) if log else None,
                 current_streak=user_challenge.current_streak,
-                created_at=str(log.created_at),
+                created_at=str(log.created_at) if log else str(user_challenge.start_date),
+                certified_today=log is not None,
             )
-            for log, user_challenge, challenge, user in rows
+            for user_challenge, challenge, user, log in rows
         ]
         logger.info("피드 조회 - user_id: %d, count: %d", current_user.id, len(items))
         return FeedListResponse(items=items)
 
-    async def cheer(self, current_user: User) -> CheerResponse:
-        """응원하기 — 응원 행위를 기록하고 성공 응답 반환"""
-        logger.info("응원하기 - user_id: %d", current_user.id)
-        return CheerResponse(message="응원을 보냈습니다! 💚")
+    async def cheer(self, payload: CheerRequest, current_user: User) -> CheerResponse:
+        """친구의 하루를 응원하고 하루 1회 알림을 생성한다."""
+        sender_id = current_user.id
+        sender_nickname = current_user.nickname
+        receiver_id = payload.target_user_id
+
+        if receiver_id == sender_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="나 자신에게는 응원을 보낼 수 없습니다.",
+            )
+
+        if not await self.repo.is_friend(sender_id, receiver_id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="친구에게만 응원을 보낼 수 있습니다.",
+            )
+
+        receiver = await self.repo.get_user_by_id(receiver_id)
+        if not receiver:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="응원을 받을 사용자를 찾을 수 없습니다.",
+            )
+
+        challenge_log_id = payload.challenge_log_id
+        if challenge_log_id is not None:
+            row = await self.repo.get_feed_log_detail(challenge_log_id)
+            if not row:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="응원할 챌린지 인증을 찾을 수 없습니다.",
+                )
+
+            log, _user_challenge, _challenge, log_owner = row
+            if log_owner.id != receiver_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="응원 대상 사용자와 챌린지 인증 작성자가 일치하지 않습니다.",
+                )
+            challenge_log_id = log.id
+
+        existing = await self.repo.get_daily_cheer_notification(
+            receiver_id=receiver_id,
+            sender_id=sender_id,
+            target_date=datetime.now(config.TIMEZONE).date(),
+        )
+        if existing:
+            return CheerResponse(message="오늘은 이미 이 친구에게 응원을 보냈어요.", notification_id=existing.id)
+
+        message = f"{sender_nickname}님이 오늘의 응원을 보냈어요."
+        notification = await self.repo.create_cheer_notification(
+            receiver_id=receiver_id,
+            sender_id=sender_id,
+            challenge_log_id=challenge_log_id,
+            message=message,
+        )
+
+        logger.info(
+            "응원하기 - sender_id: %d, receiver_id: %d, challenge_log_id: %d",
+            sender_id,
+            receiver_id,
+            challenge_log_id or 0,
+        )
+        return CheerResponse(message="오늘의 응원을 보냈습니다! 💚", notification_id=notification.id)
+
+    async def get_feed_notifications(self, current_user: User) -> FeedNotificationListResponse:
+        """내가 받은 피드 응원 알림 목록 조회"""
+        rows = await self.repo.get_feed_notifications(current_user.id)
+        notifications = [
+            FeedNotificationResponse(
+                id=notification.id,
+                sender_id=sender.id,
+                sender_nickname=sender.nickname,
+                sender_profile_image=sender.profile_image,
+                challenge_log_id=notification.challenge_log_id,
+                challenge_title=challenge.title if challenge else None,
+                message=notification.message,
+                read_at=notification.read_at,
+                created_at=notification.created_at,
+            )
+            for notification, sender, challenge in rows
+        ]
+        logger.info("피드 응원 알림 조회 - user_id: %d, count: %d", current_user.id, len(notifications))
+        return FeedNotificationListResponse(notifications=notifications)
