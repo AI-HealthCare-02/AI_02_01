@@ -1,9 +1,12 @@
-from sqlalchemy import and_, delete, or_, select
+from datetime import date
+
+from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.challenges import Challenge, ChallengeLog, UserChallenge
+from app.models.challenges import Challenge, ChallengeLog, UserChallenge, UserChallengeStatusEnum
 from app.models.friend_list import FriendList
 from app.models.friendships import Friendship, FriendshipStatusEnum
+from app.models.social_notifications import SocialNotification, SocialNotificationTypeEnum
 from app.models.users import User
 
 
@@ -44,6 +47,16 @@ class SocialRepository:
                     and_(Friendship.requester_id == user_a, Friendship.receiver_id == user_b),
                     and_(Friendship.requester_id == user_b, Friendship.receiver_id == user_a),
                 )
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def get_user_by_id(self, user_id: int) -> User | None:
+        """탈퇴하지 않은 사용자 단건 조회"""
+        result = await self._session.execute(
+            select(User).where(
+                User.id == user_id,
+                User.is_deleted == False,  # noqa: E712
             )
         )
         return result.scalar_one_or_none()
@@ -153,13 +166,20 @@ class SocialRepository:
         )
         await self._session.commit()
 
-    async def get_friends_feed(self, user_id: int, limit: int = 20) -> list:
-        """친구들의 최근 챌린지 인증 피드 조회 (최신순)"""
+    async def get_friends_feed(self, user_id: int, target_date: date, limit: int = 50) -> list:
+        """친구들의 진행 중 챌린지와 오늘 인증 여부 조회"""
         result = await self._session.execute(
-            select(ChallengeLog, UserChallenge, Challenge, User)
-            .join(UserChallenge, ChallengeLog.user_challenge_id == UserChallenge.id)
+            select(UserChallenge, Challenge, User, ChallengeLog)
             .join(Challenge, UserChallenge.challenge_id == Challenge.id)
             .join(User, UserChallenge.user_id == User.id)
+            .join(
+                ChallengeLog,
+                and_(
+                    ChallengeLog.user_challenge_id == UserChallenge.id,
+                    ChallengeLog.log_date == target_date,
+                ),
+                isouter=True,
+            )
             .join(
                 FriendList,
                 and_(
@@ -167,7 +187,71 @@ class SocialRepository:
                     FriendList.friend_id == UserChallenge.user_id,
                 ),
             )
-            .order_by(ChallengeLog.created_at.desc())
+            .where(UserChallenge.status == UserChallengeStatusEnum.ACTIVE)
+            .order_by(ChallengeLog.created_at.desc(), UserChallenge.start_date.desc())
+            .limit(limit)
+        )
+        return list(result.all())
+
+    async def get_feed_log_detail(self, challenge_log_id: int):
+        """챌린지 인증 로그와 작성자 정보를 조회한다."""
+        result = await self._session.execute(
+            select(ChallengeLog, UserChallenge, Challenge, User)
+            .join(UserChallenge, ChallengeLog.user_challenge_id == UserChallenge.id)
+            .join(Challenge, UserChallenge.challenge_id == Challenge.id)
+            .join(User, UserChallenge.user_id == User.id)
+            .where(ChallengeLog.id == challenge_log_id)
+        )
+        return result.one_or_none()
+
+    async def create_cheer_notification(
+        self,
+        receiver_id: int,
+        sender_id: int,
+        challenge_log_id: int | None,
+        message: str,
+    ) -> SocialNotification:
+        """응원 알림을 생성한다."""
+        notification = SocialNotification(
+            receiver_id=receiver_id,
+            sender_id=sender_id,
+            challenge_log_id=challenge_log_id,
+            type=SocialNotificationTypeEnum.CHEER,
+            message=message,
+        )
+        self._session.add(notification)
+
+        await self._session.commit()
+        await self._session.refresh(notification)
+        return notification
+
+    async def get_daily_cheer_notification(
+        self,
+        receiver_id: int,
+        sender_id: int,
+        target_date: date,
+    ) -> SocialNotification | None:
+        """같은 친구에게 같은 날짜에 보낸 응원 알림 조회"""
+        result = await self._session.execute(
+            select(SocialNotification).where(
+                SocialNotification.receiver_id == receiver_id,
+                SocialNotification.sender_id == sender_id,
+                SocialNotification.type == SocialNotificationTypeEnum.CHEER,
+                func.date(SocialNotification.created_at) == target_date,
+            ).order_by(SocialNotification.created_at.desc())
+        )
+        return result.scalars().first()
+
+    async def get_feed_notifications(self, user_id: int, limit: int = 20) -> list:
+        """내가 받은 피드 응원 알림 목록을 조회한다."""
+        result = await self._session.execute(
+            select(SocialNotification, User, Challenge)
+            .join(User, SocialNotification.sender_id == User.id)
+            .join(ChallengeLog, SocialNotification.challenge_log_id == ChallengeLog.id, isouter=True)
+            .join(UserChallenge, ChallengeLog.user_challenge_id == UserChallenge.id, isouter=True)
+            .join(Challenge, UserChallenge.challenge_id == Challenge.id, isouter=True)
+            .where(SocialNotification.receiver_id == user_id)
+            .order_by(SocialNotification.created_at.desc())
             .limit(limit)
         )
         return list(result.all())
