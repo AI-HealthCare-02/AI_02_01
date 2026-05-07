@@ -257,6 +257,6 @@ async def get_my_active_challenges(
     service = ChallengeService(session)
     result = await service.get_my_active_challenges(current_user.id)
     return Response(
-        content=result.model_dump(),
+        content=result.model_dump(mode="json"),
         status_code=status.HTTP_200_OK,
     )

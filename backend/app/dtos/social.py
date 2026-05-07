@@ -90,15 +90,19 @@ class FriendActionResponse(BaseModel):
 
 
 class FeedItemResponse(BaseModel):
-    """친구 챌린지 인증 피드 단건"""
+    """친구의 진행 중 챌린지 오늘 상태 단건"""
 
+    challenge_id: int
+    user_challenge_id: int
+    challenge_log_id: int | None
     user_id: int
     nickname: str
     profile_image: str | None
     challenge_title: str
-    log_date: str
+    log_date: str | None
     current_streak: int
     created_at: str
+    certified_today: bool
 
 
 class FeedListResponse(BaseModel):
@@ -111,3 +115,31 @@ class CheerResponse(BaseModel):
     """응원하기 결과"""
 
     message: str
+    notification_id: int | None = None
+
+
+class CheerRequest(BaseModel):
+    """응원하기 요청"""
+
+    target_user_id: int
+    challenge_log_id: int | None = None
+
+
+class FeedNotificationResponse(BaseModel):
+    """피드 응원 알림 단건"""
+
+    id: int
+    sender_id: int
+    sender_nickname: str
+    sender_profile_image: str | None
+    challenge_log_id: int | None
+    challenge_title: str | None
+    message: str
+    read_at: datetime | None
+    created_at: datetime
+
+
+class FeedNotificationListResponse(BaseModel):
+    """피드 응원 알림 목록"""
+
+    notifications: list[FeedNotificationResponse]
