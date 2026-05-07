@@ -35,9 +35,7 @@ class SocialService:
     def __init__(self, session: AsyncSession):
         self.repo = SocialRepository(session)
 
-    async def search_users(
-        self, keyword: str, current_user: User
-    ) -> UserSearchListResponse:
+    async def search_users(self, keyword: str, current_user: User) -> UserSearchListResponse:
         """닉네임 키워드로 사용자 검색 (is_friend 여부 포함)"""
         users = await self.repo.search_users_by_nickname(keyword, current_user.id)
         logger.info("사용자 검색 - keyword: %s, 결과 수: %d", keyword, len(users))
@@ -58,9 +56,7 @@ class SocialService:
             )
         return UserSearchListResponse(users=result)
 
-    async def send_friend_request(
-        self, receiver_id: int, current_user: User
-    ) -> FriendRequestSentResponse:
+    async def send_friend_request(self, receiver_id: int, current_user: User) -> FriendRequestSentResponse:
         """친구 요청 전송"""
         # 자기 자신에게 요청 불가
         if receiver_id == current_user.id:
@@ -91,17 +87,13 @@ class SocialService:
                 )
             if existing.status == FriendshipStatusEnum.REJECTED:
                 # 거절된 요청은 재요청 허용 (PENDING으로 복구)
-                await self.repo.update_friendship_status(
-                    existing, FriendshipStatusEnum.PENDING
-                )
+                await self.repo.update_friendship_status(existing, FriendshipStatusEnum.PENDING)
                 logger.info(
                     "친구 요청 재전송 - requester: %d → receiver: %d",
                     current_user.id,
                     receiver_id,
                 )
-                return FriendRequestSentResponse(
-                    request_id=existing.id, message="친구 요청을 전송했습니다."
-                )
+                return FriendRequestSentResponse(request_id=existing.id, message="친구 요청을 전송했습니다.")
 
         friendship = await self.repo.create_friendship(current_user.id, receiver_id)
         logger.info(
@@ -109,18 +101,12 @@ class SocialService:
             current_user.id,
             receiver_id,
         )
-        return FriendRequestSentResponse(
-            request_id=friendship.id, message="친구 요청을 전송했습니다."
-        )
+        return FriendRequestSentResponse(request_id=friendship.id, message="친구 요청을 전송했습니다.")
 
-    async def get_pending_requests(
-        self, current_user: User
-    ) -> FriendRequestListResponse:
+    async def get_pending_requests(self, current_user: User) -> FriendRequestListResponse:
         """받은 친구 요청 목록 조회 (PENDING 상태만)"""
         rows = await self.repo.get_pending_requests(current_user.id)
-        logger.info(
-            "친구 요청 목록 조회 - user_id: %d, count: %d", current_user.id, len(rows)
-        )
+        logger.info("친구 요청 목록 조회 - user_id: %d, count: %d", current_user.id, len(rows))
 
         requests = [
             FriendRequestResponse(
@@ -154,44 +140,30 @@ class SocialService:
             )
         return friendship
 
-    async def accept_friend_request(
-        self, request_id: int, current_user: User
-    ) -> FriendActionResponse:
+    async def accept_friend_request(self, request_id: int, current_user: User) -> FriendActionResponse:
         """친구 요청 수락 (FriendList 양방향 추가)"""
         friendship = await self._get_request_for_receiver(request_id, current_user)
 
-        await self.repo.update_friendship_status(
-            friendship, FriendshipStatusEnum.ACCEPTED
-        )
+        await self.repo.update_friendship_status(friendship, FriendshipStatusEnum.ACCEPTED)
         # 양방향 friend_list 추가 (A→B, B→A)
-        await self.repo.create_friend_entry(
-            friendship.requester_id, friendship.receiver_id
-        )
-        await self.repo.create_friend_entry(
-            friendship.receiver_id, friendship.requester_id
-        )
+        await self.repo.create_friend_entry(friendship.requester_id, friendship.receiver_id)
+        await self.repo.create_friend_entry(friendship.receiver_id, friendship.requester_id)
 
         logger.info("친구 요청 수락 - request_id: %d", request_id)
         return FriendActionResponse(message="친구 요청을 수락했습니다.")
 
-    async def reject_friend_request(
-        self, request_id: int, current_user: User
-    ) -> FriendActionResponse:
+    async def reject_friend_request(self, request_id: int, current_user: User) -> FriendActionResponse:
         """친구 요청 거절"""
         friendship = await self._get_request_for_receiver(request_id, current_user)
 
-        await self.repo.update_friendship_status(
-            friendship, FriendshipStatusEnum.REJECTED
-        )
+        await self.repo.update_friendship_status(friendship, FriendshipStatusEnum.REJECTED)
         logger.info("친구 요청 거절 - request_id: %d", request_id)
         return FriendActionResponse(message="친구 요청을 거절했습니다.")
 
     async def get_friend_list(self, current_user: User) -> FriendListResponse:
         """친구 목록 조회"""
         rows = await self.repo.get_friend_list(current_user.id)
-        logger.info(
-            "친구 목록 조회 - user_id: %d, count: %d", current_user.id, len(rows)
-        )
+        logger.info("친구 목록 조회 - user_id: %d, count: %d", current_user.id, len(rows))
 
         friends = [
             FriendResponse(
@@ -205,9 +177,7 @@ class SocialService:
         ]
         return FriendListResponse(friends=friends)
 
-    async def delete_friend(
-        self, friend_id: int, current_user: User
-    ) -> FriendActionResponse:
+    async def delete_friend(self, friend_id: int, current_user: User) -> FriendActionResponse:
         """친구 삭제 (양방향 FriendList 삭제 + Friendship 레코드 삭제로 재요청 허용)"""
         if not await self.repo.is_friend(current_user.id, friend_id):
             raise HTTPException(
@@ -218,9 +188,7 @@ class SocialService:
         await self.repo.delete_friend(current_user.id, friend_id)
         await self.repo.delete_friendship_by_users(current_user.id, friend_id)
 
-        logger.info(
-            "친구 삭제 - user_id: %d, friend_id: %d", current_user.id, friend_id
-        )
+        logger.info("친구 삭제 - user_id: %d, friend_id: %d", current_user.id, friend_id)
         return FriendActionResponse(message="친구를 삭제했습니다.")
 
     async def get_feed(self, current_user: User) -> FeedListResponse:
@@ -238,9 +206,7 @@ class SocialService:
                 challenge_title=challenge.title,
                 log_date=str(log.log_date) if log else None,
                 current_streak=user_challenge.current_streak,
-                created_at=(
-                    str(log.created_at) if log else str(user_challenge.start_date)
-                ),
+                created_at=(str(log.created_at) if log else str(user_challenge.start_date)),
                 certified_today=log is not None,
             )
             for user_challenge, challenge, user, log in rows
@@ -315,13 +281,9 @@ class SocialService:
             receiver_id,
             challenge_log_id or 0,
         )
-        return CheerResponse(
-            message="오늘의 응원을 보냈습니다! 💚", notification_id=notification.id
-        )
+        return CheerResponse(message="오늘의 응원을 보냈습니다! 💚", notification_id=notification.id)
 
-    async def get_feed_notifications(
-        self, current_user: User
-    ) -> FeedNotificationListResponse:
+    async def get_feed_notifications(self, current_user: User) -> FeedNotificationListResponse:
         """내가 받은 피드 응원 알림 목록 조회"""
         rows = await self.repo.get_feed_notifications(current_user.id)
         notifications = [

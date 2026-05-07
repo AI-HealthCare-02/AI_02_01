@@ -28,9 +28,7 @@ class SocialRepository:
         # 외부에서 주입받은 DB 세션 (FastAPI의 Depends를 통해 전달됨)
         self._session = session
 
-    async def search_users_by_nickname(
-        self, keyword: str, exclude_user_id: int
-    ) -> list[User]:
+    async def search_users_by_nickname(self, keyword: str, exclude_user_id: int) -> list[User]:
         """
         닉네임 키워드로 사용자 검색 (부분 일치, 자신 제외, 탈퇴 계정 제외).
         최대 20건 반환.
@@ -77,9 +75,7 @@ class SocialRepository:
         )
         return result.scalar_one_or_none()
 
-    async def create_friendship(
-        self, requester_id: int, receiver_id: int
-    ) -> Friendship:
+    async def create_friendship(self, requester_id: int, receiver_id: int) -> Friendship:
         """
         친구 요청 생성 (PENDING 상태).
         commit 후 refresh하여 DB에서 자동 생성된 값(id, created_at 등)을 반영한다.
@@ -99,14 +95,10 @@ class SocialRepository:
         친구 요청 ID(PK)로 단건 조회.
         없으면 None 반환.
         """
-        result = await self._session.execute(
-            select(Friendship).where(Friendship.id == request_id)
-        )
+        result = await self._session.execute(select(Friendship).where(Friendship.id == request_id))
         return result.scalar_one_or_none()
 
-    async def update_friendship_status(
-        self, friendship: Friendship, new_status: FriendshipStatusEnum
-    ) -> None:
+    async def update_friendship_status(self, friendship: Friendship, new_status: FriendshipStatusEnum) -> None:
         """친구 요청 상태 변경 (PENDING → ACCEPTED / REJECTED 등)"""
         friendship.status = new_status
         await self._session.commit()
@@ -181,20 +173,14 @@ class SocialRepository:
         await self._session.execute(
             delete(FriendList).where(
                 or_(
-                    and_(
-                        FriendList.user_id == user_id, FriendList.friend_id == friend_id
-                    ),
-                    and_(
-                        FriendList.user_id == friend_id, FriendList.friend_id == user_id
-                    ),
+                    and_(FriendList.user_id == user_id, FriendList.friend_id == friend_id),
+                    and_(FriendList.user_id == friend_id, FriendList.friend_id == user_id),
                 )
             )
         )
         await self._session.commit()
 
-    async def get_friends_feed(
-        self, user_id: int, target_date: date, limit: int = 50
-    ) -> list:
+    async def get_friends_feed(self, user_id: int, target_date: date, limit: int = 50) -> list:
         """친구들의 진행 중 챌린지와 오늘 인증 여부 조회"""
         result = await self._session.execute(
             select(UserChallenge, Challenge, User, ChallengeLog)
