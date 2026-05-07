@@ -32,7 +32,9 @@ social_router = APIRouter(prefix="/social", tags=["social"])
     description="닉네임 키워드로 사용자를 검색한다. 자신은 제외되며, 각 결과에 친구 여부(is_friend)가 포함된다. 최대 20건 반환.",
 )
 async def search_users(
-    nickname: Annotated[str, Query(min_length=1, max_length=20, description="검색할 닉네임 키워드")],
+    nickname: Annotated[
+        str, Query(min_length=1, max_length=20, description="검색할 닉네임 키워드")
+    ],
     user: Annotated[User, Depends(get_request_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> Response:
